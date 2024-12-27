@@ -168,7 +168,7 @@ function extractOptionsFromScript(window, optsArgs = {
 
   const search = window.location.search;
   const params = new URLSearchParams(search);
-  const paramsLang = optsArgs.activeLanguage || params.get(langParam);
+  const paramsLang = window.activeSubdomain || window.activeSubdirectory || optsArgs.activeLanguage || params.get(langParam);
   window.paramsLang = paramsLang;
 
   const paramsUpdateTranslation = params.get('globalseo_update_translation');
