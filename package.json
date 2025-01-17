@@ -1,6 +1,6 @@
 {
   "name": "globalseo",
-  "version": "2.2.39",
+  "version": "2.2.40",
   "description": "Translate your React.js or Next.js app with AI",
   "main": "index.js",
   "scripts": {
