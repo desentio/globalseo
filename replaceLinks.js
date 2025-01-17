@@ -1,6 +1,6 @@
 const getUnprefixedPathname = require("./utils/translation-mode/getUnprefixedPathname");
 
-function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceOriginHostname}) {
+function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceOriginHostname, sourceOrigin}) {
   // Select all anchor tags
   const anchors = window.document.querySelectorAll('a:not(.globalseo-ignore-link)');
 
@@ -26,7 +26,7 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
 
     // assign full url if it's relative path
     if (!anchor.href.startsWith("http") && !anchor.href.startsWith("tel:") && !anchor.href.startsWith("mailto:")) {
-      const currentUrl = new URL(window.location.href);
+      const currentUrl = new URL(sourceOrigin || window.location.href);
       const fullHref = `${currentUrl.protocol}//${currentUrl.hostname}${anchor.href}`;
       anchor.href = fullHref;
     }

@@ -22,7 +22,7 @@ if (isBrowser()) {
     function initTranslation() {
       // replace links with lang (for SEO purposes)
       if (translationMode != 'subdomain' && translationMode != 'subdirectory' && shouldReplaceLinks && paramsLang && (paramsLang != originalLanguage)) {
-        replaceLinks(window, {langParam, lang: paramsLang, translationMode: options.translationMode});
+        replaceLinks(window, {langParam, lang: paramsLang, translationMode: options.translationMode, sourceOrigin: options.sourceOrigin});
       }
       getTranslations(window, apiKey, options)
     }
