@@ -115,6 +115,86 @@ async function startTranslationCycle(window, node, apiKey, delay, shouldOptimize
     })
   }
 
+  // replace src and srcset because nextjs will replace the whole html on rerender for subdirectory mode
+  if (options.translationMode == "subdirectory" && window.activeSubdirectory) {    // get all elements with src attribute
+    ["src", "srcset"].forEach(attr => {
+      try {
+        const elements = window.document.querySelectorAll(`[${attr}]`);
+        const elementsWithRelativeSrc = Array.from(elements).filter(el => {
+          const srcAttribute = el.getAttribute(attr);
+          return !srcAttribute.startsWith("http")
+        });
+
+        const originalWebsiteHostname = new URL(options.sourceOrigin).hostname;
+
+        elementsWithRelativeSrc.forEach(el => {
+          if (attr == "srcset") {
+            // handle srcset
+            const srcset = el.getAttribute(attr).split(", ");
+            const newSrcset = srcset.map(src => {
+              const [srcUrl, srcWidth] = src.split(" ");
+              const url = new URL(srcUrl, options.sourceOrigin || window.location.origin);
+              url.hostname = originalWebsiteHostname;
+
+              // handle path relative to current pathname (that not starts with slash)
+              // if started with slash, it means it's relative to the root
+              // meanwhile if it's not started with slash, it means it's relative to the current pathname
+              const rawAttribute = el.getAttribute(attr);
+              if (options.domainSourcePrefix && !rawAttribute.startsWith("/")) {
+                url.pathname = `${options.domainSourcePrefix}${url.pathname}`;
+              }
+
+              return `${url.href} ${srcWidth}`;
+            }).join(", ");
+            el.srcset = newSrcset;
+          } else {
+            const url = new URL(el.getAttribute(attr), options.sourceOrigin || window.location.origin);
+            url.hostname = originalWebsiteHostname;
+
+            // handle path relative to current pathname (that not starts with slash)
+              // if started with slash, it means it's relative to the root
+              // meanwhile if it's not started with slash, it means it's relative to the current pathname
+            const rawAttribute = el.getAttribute(attr);
+            if (options.domainSourcePrefix && !rawAttribute.startsWith("/")) {
+              url.pathname = `${options.domainSourcePrefix}${url.pathname}`;
+            }
+
+            el[attr] = url.href;
+          }
+        })
+      } catch(err) {
+        // do nothing
+      }
+    })
+
+     // replace all internal links behavior to force reload using window.location.href
+     const links = window.document.querySelectorAll("a");
+     links.forEach(link => {
+       try {
+         const href = link.href;
+         const url = new URL(href);
+         const origin = url.origin;
+         
+         if (options.domainSourcePrefix) {
+           url.pathname = getUnprefixedPathname(window, options.domainSourcePrefix, url.pathname);
+         }
+         const isHashTagInSamePathname = url.href ? (url.pathname == window.location.pathname) && url.href.includes("#") : false;
+         
+         if (origin == window.location.origin && !isHashTagInSamePathname) {
+           // add onclick
+           link.onclick = (e) => {
+             e.preventDefault();
+             window.location.href = href;
+ 
+             return true;
+           }
+         }
+       } catch(err) {
+         // do nothing
+       }      
+     })
+  }
+
   const lang = options?.translationMode == "subdomain" && !window.isWorker ? getGlobalseoActiveLang(window) : (window.paramsLang || getGlobalseoActiveLang(window) || await getLanguageFromLocalStorage(window));
   const originalLang = options?.originalLanguage;
 
