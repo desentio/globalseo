@@ -6,7 +6,6 @@
 3. [Optional Configuration](#optional-configuration)
 4. [Server-Side Rendering Configuration](#server-side-rendering-configuration)
 5. [Excluding Text from Translation](#excluding-text-from-translation)
-6. [Directing Users to a Specific Language Version](#directing-users-to-a-specific-language-version)
 7. [Advanced Configuration](#advanced-configuration)
 
 ## About the Integration
@@ -51,11 +50,6 @@ Below is a script tag example with all possible configurations:
 To prevent translation of specific content, add the class `globalseo-exclude` to elements, such as chat pop-ups or user-generated text.
 
 **Note:** Input fields and iframes are ignored by default.
-
-## Directing Users to a Specific Language Version
-Direct users to a specific language version using the `/?lang=LANGUAGE_CODE` URL parameter.
-
-**Example:** `example.com/?lang=ru` will automatically translate the page into Russian.
 
 ## Advanced Configuration
 - **data-translate-attributes**: Translates `title` & `alt` attributes of images and links for improved SEO and accessibility. Set to `true` to enable.
