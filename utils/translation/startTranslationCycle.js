@@ -6,7 +6,25 @@ const { renderSelectorState } = require("../selector/renderSelectorState");
 const { isExcludedPath } = require("./isExcluded");
 const getUnprefixedPathname = require("../translation-mode/getUnprefixedPathname");
 
-async function startTranslationCycle(window, node, apiKey, delay, shouldOptimizeSEO = false) {
+// the goal is to limit the number of promises that can be run at the same time
+// startTranslationCycleInProgress -> startTranslationCycleNext -> if there is another startTranslationCycle, it will replace the startTranslationCycleNext so the previous promise will never be called, and the latest one will be called once the in progress promise is finished
+async function startTranslationCycle(...args) {
+  const promiseFunction = () => startTranslationCycleBase(...args).finally(() => {
+    if (window.startTranslationCycleNext) {
+      window.startTranslationCycleInProgress = window.startTranslationCycleNext();
+      window.startTranslationCycleNext = null;
+    } else {
+      window.startTranslationCycleInProgress = null;
+    }
+  });
+  if (window.startTranslationCycleInProgress) {
+    window.startTranslationCycleNext = promiseFunction;
+  } else {
+    window.startTranslationCycleInProgress = promiseFunction();
+  }
+}
+
+async function startTranslationCycleBase(window, node, apiKey, delay, shouldOptimizeSEO = false) {
   if (window.preventInitialTranslation) {
     window.preventInitialTranslation = false;
     return;
