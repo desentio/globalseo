@@ -88,6 +88,10 @@ function shouldTranslateInlineText(window) {
   return shouldtranslateSplittedText;
 }
 
+function isUntranslatedValue(value) {
+  return value.includes(DEFAULT_UNTRANSLATED_VALUE) || value.includes("weploy-untranslated");
+}
+
 module.exports = {
   isBrowser,
   getGlobalseoOptions,
@@ -97,6 +101,7 @@ module.exports = {
   getIsTranslationInitialized,
   setIsTranslationInitialized,
   shouldTranslateInlineText,
+  isUntranslatedValue,
   API_URL,
   CDN_URL,
   KV_URL,

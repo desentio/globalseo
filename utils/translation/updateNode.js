@@ -1,4 +1,4 @@
-const { DEFAULT_UNTRANSLATED_VALUE, MERGE_PREFIX } = require("../configs");
+const { MERGE_PREFIX, isUntranslatedValue } = require("../configs");
 const getCacheKey = require("./getCacheKey");
 
 function decodeHTMLEntities(window, text = "") {
@@ -15,7 +15,7 @@ function updateNode(window, node, language, type = "text", debugSource) {
   // update title
   if (node == window.document) {
     const newText = window.translationCache?.[window.location.pathname]?.[language]?.[window.document.title] || "";  
-    if (newText && !newText.includes(DEFAULT_UNTRANSLATED_VALUE) && !newText.includes("globalseo-untranslated")) {
+    if (newText && !isUntranslatedValue(newText)) {
       window.document.title = decodeHTMLEntities(window, newText);
     }
     return;
@@ -24,7 +24,7 @@ function updateNode(window, node, language, type = "text", debugSource) {
   // update meta tags
   if (node.tagName == "META") {
     const newText = window.translationCache?.[window.location.pathname]?.[language]?.[node.content] || "";  
-    if (newText && !newText.includes(DEFAULT_UNTRANSLATED_VALUE) && !newText.includes("globalseo-untranslated")) {
+    if (newText && !isUntranslatedValue(newText)) {
       node.content = decodeHTMLEntities(window, newText);
     }
     return;
@@ -35,11 +35,11 @@ function updateNode(window, node, language, type = "text", debugSource) {
     const newAlt = window.translationCache?.[window.location.pathname]?.[language]?.[node.alt] || "";
     const newTitle = window.translationCache?.[window.location.pathname]?.[language]?.[node.title] || "";
 
-    if (newAlt && !newAlt.includes(DEFAULT_UNTRANSLATED_VALUE) && !newAlt.includes("globalseo-untranslated")) {
+    if (newAlt && !isUntranslatedValue(newAlt)) {
       node.alt = decodeHTMLEntities(window, newAlt);
     }
 
-    if (newTitle && !newTitle.includes(DEFAULT_UNTRANSLATED_VALUE) && !newTitle.includes("globalseo-untranslated")) {
+    if (newTitle && !isUntranslatedValue(newTitle)) {
       node.title = decodeHTMLEntities(window, newTitle);
     }
     return;
@@ -48,7 +48,7 @@ function updateNode(window, node, language, type = "text", debugSource) {
   // update anchor title
   if (type == "seo" && node.tagName == "A") {
     const newTitle = window.translationCache?.[window.location.pathname]?.[language]?.[node.title] || "";
-    if (newTitle && !newTitle.includes(DEFAULT_UNTRANSLATED_VALUE) && !newTitle.includes("globalseo-untranslated")) {
+    if (newTitle && !isUntranslatedValue(newTitle)) {
       node.title = decodeHTMLEntities(window, newTitle);
     }
     return;
@@ -56,7 +56,7 @@ function updateNode(window, node, language, type = "text", debugSource) {
 
   if (type == "form" && (node.tagName == "TEXTAREA" || (node.tagName == "INPUT" && node.type != "button" && node.type != "submit"))) {
     const newPlaceholder = window.translationCache?.[window.location.pathname]?.[language]?.[node.placeholder] || "";
-    if (newPlaceholder && !newPlaceholder.includes(DEFAULT_UNTRANSLATED_VALUE) && !newPlaceholder.includes("globalseo-untranslated")) {
+    if (newPlaceholder && !isUntranslatedValue(newPlaceholder)) {
       node.placeholder = decodeHTMLEntities(window, newPlaceholder);
     }
     return;
@@ -64,7 +64,7 @@ function updateNode(window, node, language, type = "text", debugSource) {
 
   if (type == "form" && (node.tagName == "INPUT" && (node.type == "button" || node.type == "submit"))) {
     const newValue = window.translationCache?.[window.location.pathname]?.[language]?.[node.value] || "";
-    if (newValue && !newValue.includes(DEFAULT_UNTRANSLATED_VALUE) && !newValue.includes("globalseo-untranslated")) {
+    if (newValue && !isUntranslatedValue(newValue)) {
       node.value = decodeHTMLEntities(window, newValue);
     }
     return;
@@ -72,7 +72,7 @@ function updateNode(window, node, language, type = "text", debugSource) {
 
   if (type == "form" && node.tagName == "OPTION") {
     const newText = window.translationCache?.[window.location.pathname]?.[language]?.[node.textContent] || "";
-    if (newText && !newText.includes(DEFAULT_UNTRANSLATED_VALUE) && !newText.includes("globalseo-untranslated")) {
+    if (newText && !isUntranslatedValue(newText)) {
       node.textContent = decodeHTMLEntities(window, newText);
     }
     return;
@@ -233,7 +233,7 @@ function updateNode(window, node, language, type = "text", debugSource) {
   // console.log("newText", newText)
   // console.log("cache", cache)
   // console.log("node.textContent", node.textContent == text, node.textContent)
-  if(newText && !newText.includes(DEFAULT_UNTRANSLATED_VALUE) && !newText.includes("globalseo-untranslated")) {
+  if(newText && !isUntranslatedValue(newText)) {
     // if (node.textContent == "Willkommen im Supermarkt" || text == "Willkommen im Supermarkt") {
     //   console.log("Willkommen im Supermarkt normal", node.textContent == text, node.textContent, text, newText)
     // }

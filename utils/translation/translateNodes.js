@@ -1,5 +1,5 @@
 const { isCompressionSupported } = require("../compressions");
-const { isBrowser, getGlobalseoOptions, DEFAULT_UNTRANSLATED_VALUE, getIsTranslationInitialized } = require("../configs");
+const { isBrowser, getGlobalseoOptions, isUntranslatedValue, getIsTranslationInitialized, DEFAULT_UNTRANSLATED_VALUE } = require("../configs");
 const { renderSelectorState } = require("../selector/renderSelectorState");
 const getCacheKey = require("./getCacheKey");
 const getTagName = require("./getTagName");
@@ -260,7 +260,7 @@ function translateNodes(window, textNodes = [], language = "", apiKey = "", seoN
           }
 
           // If the translation is not available, cache the original text
-          if (isStillSameLang(window, language) && (window.translationCache?.[window.location.pathname]?.[language]?.[text] || "").includes(DEFAULT_UNTRANSLATED_VALUE)) {
+          if (isStillSameLang(window, language) && isUntranslatedValue(window.translationCache?.[window.location.pathname]?.[language]?.[text] || "")) {
             window.translationCache[window.location.pathname][language][text] = DEFAULT_UNTRANSLATED_VALUE;
             window.untranslatedCache[window.location.pathname][language][text] = true;
           }
@@ -293,7 +293,7 @@ function translateNodes(window, textNodes = [], language = "", apiKey = "", seoN
         const text = getCacheKey(window, node);
 
         // If the translation is not available, cache the original text
-        if (isStillSameLang(window, language) && (window.translationCache?.[window.location.pathname]?.[language]?.[text] || "").includes(DEFAULT_UNTRANSLATED_VALUE)) {
+        if (isStillSameLang(window, language) && isUntranslatedValue(window.translationCache?.[window.location.pathname]?.[language]?.[text] || "")) {
           window.translationCache[window.location.pathname][language][text] = DEFAULT_UNTRANSLATED_VALUE;
           window.untranslatedCache[window.location.pathname][language][text] = true;
         }
