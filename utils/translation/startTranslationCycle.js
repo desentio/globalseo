@@ -8,8 +8,8 @@ const getUnprefixedPathname = require("../translation-mode/getUnprefixedPathname
 
 // the goal is to limit the number of promises that can be run at the same time
 // startTranslationCycleInProgress -> startTranslationCycleNext -> if there is another startTranslationCycle, it will replace the startTranslationCycleNext so the previous promise will never be called, and the latest one will be called once the in progress promise is finished
-async function startTranslationCycle(...args) {
-  const promiseFunction = () => startTranslationCycleBase(...args).finally(() => {
+async function startTranslationCycle(window, ...args) {
+  const promiseFunction = () => startTranslationCycleBase(window, ...args).finally(() => {
     if (window.startTranslationCycleNext) {
       window.startTranslationCycleInProgress = window.startTranslationCycleNext();
       window.startTranslationCycleNext = null;
