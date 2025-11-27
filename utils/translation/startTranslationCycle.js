@@ -1,4 +1,4 @@
-const { getGlobalseoActiveLang, getGlobalseoOptions } = require("../configs");
+const { getGlobalseoActiveLang, getGlobalseoOptions, isBrowser } = require("../configs");
 const { getLanguageFromLocalStorage } = require("../languages/getSelectedLanguage");
 const modifyHtmlStrings = require("./modifyHtmlStrings");
 const { debounce } = require("../debounce");
@@ -8,8 +8,14 @@ const getUnprefixedPathname = require("../translation-mode/getUnprefixedPathname
 
 // the goal is to limit the number of promises that can be run at the same time
 // startTranslationCycleInProgress -> startTranslationCycleNext -> if there is another startTranslationCycle, it will replace the startTranslationCycleNext so the previous promise will never be called, and the latest one will be called once the in progress promise is finished
-async function startTranslationCycle(window, ...args) {
-  const promiseFunction = () => startTranslationCycleBase(window, ...args).finally(() => {
+async function startTranslationCycle(...args) {
+  // if run on server, just run normally
+  if (!isBrowser()) {
+    return startTranslationCycleBase(...args);
+  }
+
+  
+  const promiseFunction = () => startTranslationCycleBase(...args).finally(() => {
     if (window.startTranslationCycleNext) {
       window.startTranslationCycleInProgress = window.startTranslationCycleNext();
       window.startTranslationCycleNext = null;
