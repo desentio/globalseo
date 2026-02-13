@@ -18,7 +18,7 @@ async function getLanguageFromLocalStorage(window) {
   let language = paramsLang || localStorageLang;
 
   if (!availableLangs.find(l => l.lang == language)) {
-    saveDefaultLanguageToLocalStorage(window, availableLangs, options.translationMode == "subdomain" ? false : options.useBrowserLanguage);
+    saveDefaultLanguageToLocalStorage(window, availableLangs, (options.translationMode == "subdomain" || options.translationMode == "domain") ? false : options.useBrowserLanguage);
   } else {
     setGlobalseoActiveLang(window, language);
   }

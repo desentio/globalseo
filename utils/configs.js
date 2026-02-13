@@ -46,7 +46,7 @@ function setGlobalseoOptions(window, value = {}) {
 
 function getGlobalseoActiveLang(window) {
   const options = getGlobalseoOptions(window);
-  if (window.paramsLang && options.translationMode != 'subdomain' && options.translationMode != 'subdirectory') {
+  if (window.paramsLang && options.translationMode != 'subdomain' && options.translationMode != 'subdirectory' && options.translationMode != 'domain') {
     return window.paramsLang;
   } 
   if (!window.globalseoActiveLang) {
@@ -65,6 +65,11 @@ function setGlobalseoActiveLang(window, language) {
 
   if (options.translationMode == 'subdirectory') {
     window.globalseoActiveLang = window.activeSubdirectory || options.originalLanguage
+    return;
+  }
+
+  if (options.translationMode == 'domain' && !window.isWorker) {
+    window.globalseoActiveLang = window.activeDomainLang || options.originalLanguage
     return;
   }
 

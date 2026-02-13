@@ -92,6 +92,10 @@ function extractOptionsFromScript(window, optsArgs = {
   const DATA_DOMAIN_SOURCE_PREFIX = "data-domain-source-prefix"
   const DATA_CUSTOM_LINKS = "data-custom-links"
 
+  // DOMAIN MODE ATTRIBUTES
+  const DATA_ORIGINAL_DOMAIN = "data-original-domain";
+  const DATA_TRANSLATED_DOMAINS = "data-translated-domains";
+
   const DATA_TRANSLATION_CACHE = "data-translation-cache";
   const DATA_SOURCE_ORIGIN = "data-source-origin";
 
@@ -115,6 +119,11 @@ function extractOptionsFromScript(window, optsArgs = {
     window.preventInitialTranslation = true;
     window.activeSubdirectory = activeSubdirectory;
   }
+
+  // DOMAIN MODE: parse original hostname and translated domains
+  const originalDomain = window.translationScriptTag.getAttribute(DATA_ORIGINAL_DOMAIN);
+  const translatedDomainsAttr = window.translationScriptTag.getAttribute(DATA_TRANSLATED_DOMAINS);
+  const translatedDomains = translatedDomainsAttr ? translatedDomainsAttr.split(",").map(d => d.trim()).filter(Boolean) : [];
 
   const activeServerSideLang = activeSubdomain || activeSubdirectory;
 
@@ -166,9 +175,24 @@ function extractOptionsFromScript(window, optsArgs = {
 
   const langParam = window.translationScriptTag.getAttribute(DATA_LANG_PARAMETER) || "lang";
 
+  // DOMAIN MODE: detect active language from current host (hostname:port)
+  if (translationMode === "domain" && isBrowser() && originalDomain && translatedDomains.length) {
+    const currentHost = window.location.host; // includes port if non-default
+    if (currentHost !== originalDomain) {
+      const rawAllowedLangs = (window.translationScriptTag.getAttribute(DATA_ALLOWED_LANGUAGES) || "")
+        .split(",").map(l => l.trim().toLowerCase()).filter(Boolean);
+      const rawOriginalLang = (window.translationScriptTag.getAttribute(DATA_ORIGINAL_LANG) || window.translationScriptTag.getAttribute("data-original-lanugage") || "").trim().toLowerCase();
+      const filteredLangs = rawAllowedLangs.filter(l => l !== rawOriginalLang);
+      const domainIndex = translatedDomains.indexOf(currentHost);
+      if (domainIndex !== -1 && filteredLangs[domainIndex]) {
+        window.activeDomainLang = filteredLangs[domainIndex];
+      }
+    }
+  }
+
   const search = window.location.search;
   const params = new URLSearchParams(search);
-  const paramsLang = window.activeSubdomain || window.activeSubdirectory || optsArgs.activeLanguage || params.get(langParam);
+  const paramsLang = window.activeSubdomain || window.activeSubdirectory || window.activeDomainLang || optsArgs.activeLanguage || params.get(langParam);
   window.paramsLang = paramsLang;
 
   const paramsUpdateTranslation = params.get('globalseo_update_translation');
@@ -180,6 +204,17 @@ function extractOptionsFromScript(window, optsArgs = {
   const allowedLangAttr = window.translationScriptTag.getAttribute(DATA_ALLOWED_LANGUAGES);
   const allowedLangs = (allowedLangAttr || "").trim().toLowerCase().split(",").filter(lang => lang && lang.trim() != originalLang).map(lang => lang.trim());
 
+  // DOMAIN MODE: build language-to-domain mapping
+  const langToDomainMap = {};
+  if (translationMode === "domain" && originalDomain) {
+    langToDomainMap[originalLang] = originalDomain;
+    allowedLangs.forEach((lang, index) => {
+      if (translatedDomains[index]) {
+        langToDomainMap[lang] = translatedDomains[index];
+      }
+    });
+  }
+
   // always use original language for subdomain
   let activeLang = (window.globalseoActiveLang || paramsLang || originalLang);
 
@@ -189,6 +224,10 @@ function extractOptionsFromScript(window, optsArgs = {
 
   if (translationMode == "subdirectory" && !window.isWorker) {
     activeLang = window.globalseoActiveLang
+  }
+
+  if (translationMode == "domain" && !window.isWorker) {
+    activeLang = window.globalseoActiveLang || window.activeDomainLang || originalLang
   }
   
   if (activeLang && (window.document.documentElement.lang != activeLang)) {
@@ -253,7 +292,11 @@ function extractOptionsFromScript(window, optsArgs = {
         newCanonicalLinkTag.href = url.href;
       }
     }
-    
+
+    if (translationMode == "domain") {
+      newCanonicalLinkTag.href = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
+    }
+
     newCanonicalLinkTag.setAttribute('rel', 'canonical');
     window.document.head.appendChild(newCanonicalLinkTag);
 
@@ -272,7 +315,11 @@ function extractOptionsFromScript(window, optsArgs = {
     const originalPathname = getPrefixedPathname(window, domainSourcePrefix, subdirUrl.pathname) // add back the prefix
     const subdirectoryHref = `${window.location.protocol}//${domain}${originalPathname}`
     // append prefix to the original lang because the subdomain will be accessed without the prefix (dont append if subdirectory mode)
-    alternateLinkTag.href = translationMode == "subdirectory" ? subdirectoryHref : `${window.location.protocol}//${domain}${getPrefixedPathname(window, domainSourcePrefix, window.location.pathname)}`;
+    if (translationMode == "domain") {
+      alternateLinkTag.href = `${window.location.protocol}//${originalDomain}${window.location.pathname}`;
+    } else {
+      alternateLinkTag.href = translationMode == "subdirectory" ? subdirectoryHref : `${window.location.protocol}//${domain}${getPrefixedPathname(window, domainSourcePrefix, window.location.pathname)}`;
+    }
     window.document.head.appendChild(alternateLinkTag);
 
     // Add alternate link tags for allowed languages
@@ -297,7 +344,7 @@ function extractOptionsFromScript(window, optsArgs = {
       if (translationMode == "subdirectory") {
         // remove lang param
         url.searchParams.delete(langParam);
-        
+
         // append the first slash with lang
         // google.com -> google.com/en
         // url.pathname = url.pathname.replace(domainSourcePrefix, "")
@@ -309,7 +356,13 @@ function extractOptionsFromScript(window, optsArgs = {
         if (lang == originalLang) url.pathname = `${domainSourcePrefix}${url.pathname}`
         alternateLinkTag.href = url.href;
       }
-      
+      if (translationMode == "domain") {
+        const domainForLang = langToDomainMap[lang];
+        if (domainForLang) {
+          alternateLinkTag.href = `${window.location.protocol}//${domainForLang}${window.location.pathname}`;
+        }
+      }
+
       window.document.head.appendChild(alternateLinkTag);
     }
   }
@@ -484,6 +537,9 @@ function extractOptionsFromScript(window, optsArgs = {
     domainSourcePrefix,
     customLinks,
     sourceOrigin,
+    originalDomain,
+    translatedDomains,
+    langToDomainMap,
   }
 }
 

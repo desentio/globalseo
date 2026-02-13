@@ -42,7 +42,7 @@ async function startTranslationCycleBase(window, node, apiKey, delay, shouldOpti
     return window;
   }
 
-  if (!window.isWorker && options.translationMode == "subdomain") {      
+  if (!window.isWorker && options.translationMode == "subdomain") {
     await renderSelectorState(window, { shouldUpdateActiveLang: true, delay: 0, shouldLog: false })
 
     // dont translate anything on original site
@@ -50,6 +50,17 @@ async function startTranslationCycleBase(window, node, apiKey, delay, shouldOpti
       return window;
     } else {
       window.globalseoActiveLang = window.activeSubdomain;
+    }
+  }
+
+  if (!window.isWorker && options.translationMode == "domain") {
+    await renderSelectorState(window, { shouldUpdateActiveLang: true, delay: 0, shouldLog: false })
+
+    // dont translate anything on original site
+    if (!window.activeDomainLang) {
+      return window;
+    } else {
+      window.globalseoActiveLang = window.activeDomainLang;
     }
   }
 
@@ -219,7 +230,7 @@ async function startTranslationCycleBase(window, node, apiKey, delay, shouldOpti
      })
   }
 
-  const lang = options?.translationMode == "subdomain" && !window.isWorker ? getGlobalseoActiveLang(window) : (window.paramsLang || getGlobalseoActiveLang(window) || await getLanguageFromLocalStorage(window));
+  const lang = (options?.translationMode == "subdomain" || options?.translationMode == "domain") && !window.isWorker ? getGlobalseoActiveLang(window) : (window.paramsLang || getGlobalseoActiveLang(window) || await getLanguageFromLocalStorage(window));
   const originalLang = options?.originalLanguage;
 
   if (!window.langHistory) {

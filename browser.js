@@ -21,7 +21,7 @@ if (isBrowser()) {
 
     function initTranslation() {
       // replace links with lang (for SEO purposes)
-      if (translationMode != 'subdomain' && translationMode != 'subdirectory' && shouldReplaceLinks && paramsLang && (paramsLang != originalLanguage)) {
+      if (translationMode != 'subdomain' && translationMode != 'subdirectory' && translationMode != 'domain' && shouldReplaceLinks && paramsLang && (paramsLang != originalLanguage)) {
         replaceLinks(window, {langParam, lang: paramsLang, translationMode: options.translationMode, sourceOrigin: options.sourceOrigin});
       }
       getTranslations(window, apiKey, options)

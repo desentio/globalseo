@@ -42,6 +42,17 @@ function addOrReplaceLangParam(window, url, lang) {
     return urlObj.toString();
   }
 
+  if (options.translationMode == "domain") {
+    const domain = options.langToDomainMap?.[lang];
+    if (domain) {
+      // domain may include port (e.g. "localhost:3001"), use host to set both
+      const parts = domain.split(":");
+      urlObj.hostname = parts[0];
+      urlObj.port = parts[1] || "";
+    }
+    return urlObj.toString();
+  }
+
   let params = new URLSearchParams(urlObj.search);
   
   params.set(options.langParam || 'lang', lang);
