@@ -64,61 +64,58 @@ async function startTranslationCycleBase(window, node, apiKey, delay, shouldOpti
     }
   }
 
-  // replace src because nextjs will replace the whole html on rerender
+  // replace absolute URLs matching original domain into relative URLs so they point to current subdomain
   if (options.translationMode == "subdomain" && window.activeSubdomain) {
-    // get all elements with src attribute
+    // get the original website (based on current subdomain url but without the subdomain)
+    const originalWebsite = window.location.origin.replace(window.activeSubdomain + ".", "");
+    const originalWebsiteHostname = new URL(originalWebsite).hostname;
+
     ["src", "srcset"].forEach(attr => {
       try {
         const elements = window.document.querySelectorAll(`[${attr}]`);
 
-        const elementsWithRelativeSrc = Array.from(elements).filter(el => {
+        // only target elements with absolute URLs matching the original domain
+        const elementsWithAbsoluteSrc = Array.from(elements).filter(el => {
+          // Skip elements inside the language selector
+          if (el.closest && el.closest('.globalseo-lang-selector-wrapper')) return false;
+          // Skip link rel="alternate" and link rel="canonical"
+          const rel = el.getAttribute && el.getAttribute('rel');
+          if (rel === 'alternate' || rel === 'canonical') return false;
           const srcAttribute = el.getAttribute(attr);
-          return !srcAttribute.startsWith("http")
+          if (!srcAttribute.startsWith("http")) return false; // skip relative URLs
+          try {
+            const url = new URL(srcAttribute);
+            const hostnameWithoutWww = url.hostname.replace(/^www\./, '');
+            return hostnameWithoutWww === originalWebsiteHostname || hostnameWithoutWww === originalWebsiteHostname.replace(/^www\./, '');
+          } catch(e) { return false; }
         });
 
-        // get the original website (based on current subdomain url but without the subdomain)
-        const originalWebsite = window.location.origin.replace(window.activeSubdomain + ".", "");
-        const originalWebsiteHostname = new URL(originalWebsite).hostname;
-
-        // replace the hostname of the src with the original hostname
-        elementsWithRelativeSrc.forEach(el => {
+        // convert absolute source domain URLs to relative paths
+        elementsWithAbsoluteSrc.forEach(el => {
           if (attr == "srcset") {
-             // handle srcset
-            const srcset = el.srcset.split(", ");
+            const srcset = el.getAttribute(attr).split(", ");
             const newSrcset = srcset.map(src => {
               const [srcUrl, srcWidth] = src.split(" ");
-              const url = new URL(srcUrl, window.location.origin);
-              url.hostname = originalWebsiteHostname;
-
-              // handle path relative to current pathname (that not starts with slash)
-              // if started with slash, it means it's relative to the root
-              // meanwhile if it's not started with slash, it means it's relative to the current pathname
-              const rawAttribute = el.getAttribute(attr);
-              if (options.domainSourcePrefix && !rawAttribute.startsWith("/")) {
-                url.pathname = `${options.domainSourcePrefix}${url.pathname}`;
-              }
-
-              return `${url.href} ${srcWidth}`;
+              try {
+                const url = new URL(srcUrl);
+                const hostnameWithoutWww = url.hostname.replace(/^www\./, '');
+                if (hostnameWithoutWww === originalWebsiteHostname || hostnameWithoutWww === originalWebsiteHostname.replace(/^www\./, '')) {
+                  return `${url.pathname + url.search + url.hash} ${srcWidth}`;
+                }
+              } catch(e) {}
+              return src;
             }).join(", ");
             el.srcset = newSrcset;
           } else {
-            const url = new URL(el[attr]);
-            url.hostname = originalWebsiteHostname;
-
-            // handle path relative to current pathname (that not starts with slash)
-              // if started with slash, it means it's relative to the root
-              // meanwhile if it's not started with slash, it means it's relative to the current pathname
-            const rawAttribute = el.getAttribute(attr);
-            if (options.domainSourcePrefix && !rawAttribute.startsWith("/")) {
-              url.pathname = `${options.domainSourcePrefix}${url.pathname}`;
-            }
-
-            el[attr] = url.href;
+            try {
+              const url = new URL(el.getAttribute(attr));
+              el[attr] = url.pathname + url.search + url.hash;
+            } catch(e) {}
           }
         })
       } catch(err) {
         // do nothing
-      }      
+      }
     })
 
 

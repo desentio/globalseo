@@ -98,7 +98,10 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
 
     for (let element of allElements) {
       // Skip elements inside the language selector
-      if (element.closest('.globalseo-lang-selector-menu-container')) continue;
+      if (element.closest('.globalseo-lang-selector-wrapper')) continue;
+      // Skip link rel="alternate" and link rel="canonical"
+      const rel = element.getAttribute('rel');
+      if (rel === 'alternate' || rel === 'canonical') continue;
       const attrs = ['href', 'src'];
       for (let attr of attrs) {
         const value = element.getAttribute(attr);
