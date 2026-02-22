@@ -35,7 +35,10 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
     const timeout = getGlobalseoOptions(window).timeout;
 
     function runReplaceLinks() {
-      if (optsArgs.translationMode === 'subdomain') {
+      const domain = window.location.hostname.split('.').slice(1).join('.');
+      const isInOriginalDomain = (domain == window.location.hostname) || window.location.hostname.startsWith(`www`);
+
+      if (optsArgs.translationMode === 'subdomain' && !isInOriginalDomain) {
         replaceLinks(window, {
           langParam: optsArgs.langParam,
           lang: optsArgs.paramsLang,
