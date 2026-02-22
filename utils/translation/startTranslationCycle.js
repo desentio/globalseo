@@ -135,7 +135,7 @@ async function startTranslationCycleBase(window, node, apiKey, delay, shouldOpti
         }
         const isHashTagInSamePathname = url.href ? (url.pathname == window.location.pathname) && url.href.includes("#") : false;
         
-        if (origin == window.location.origin && !isHashTagInSamePathname) {
+        if (origin == window.location.origin && !isHashTagInSamePathname && !link.onclick) {
           // add onclick
           link.onclick = (e) => {
             e.preventDefault();
@@ -146,7 +146,7 @@ async function startTranslationCycleBase(window, node, apiKey, delay, shouldOpti
         }
       } catch(err) {
         // do nothing
-      }      
+      }
     })
   }
 
@@ -215,12 +215,12 @@ async function startTranslationCycleBase(window, node, apiKey, delay, shouldOpti
          }
          const isHashTagInSamePathname = url.href ? (url.pathname == window.location.pathname) && url.href.includes("#") : false;
          
-         if (origin == window.location.origin && !isHashTagInSamePathname) {
+         if (origin == window.location.origin && !isHashTagInSamePathname && !link.onclick) {
            // add onclick
            link.onclick = (e) => {
              e.preventDefault();
              window.location.href = href;
- 
+
              return true;
            }
          }
