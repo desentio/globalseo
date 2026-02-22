@@ -34,9 +34,22 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
 
     const timeout = getGlobalseoOptions(window).timeout;
 
+    function runReplaceLinks() {
+      if (optsArgs.translationMode === 'subdomain') {
+        replaceLinks(window, {
+          langParam: optsArgs.langParam,
+          lang: optsArgs.paramsLang,
+          translationMode: optsArgs.translationMode,
+          prefix: optsArgs.domainSourcePrefix,
+          sourceOrigin: optsArgs.sourceOrigin
+        });
+      }
+    }
+
     return await startTranslationCycle(window, window.document.body, apiKey, timeout, true)
       .then(() => {
         // console.log("GLOBALSEO: Translation cycle completed")
+        runReplaceLinks();
         return window
       }) // return window object as response
       .catch((err) => {
@@ -95,12 +108,12 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
               }
             }
 
-            if (elements.length && optsArgs.createSelector) {              
+            if (elements.length && optsArgs.createSelector) {
               createLanguageSelect(window, optsArgs).then(() => {
-                if (nodes.length) startTranslationCycle(window, window.document.body, apiKey, debounceDuration).catch(console.log)
+                if (nodes.length) startTranslationCycle(window, window.document.body, apiKey, debounceDuration).then(() => { runReplaceLinks(); }).catch(console.log)
               });
             } else {
-              if (nodes.length) startTranslationCycle(window, window.document.body, apiKey, debounceDuration).catch(console.log)
+              if (nodes.length) startTranslationCycle(window, window.document.body, apiKey, debounceDuration).then(() => { runReplaceLinks(); }).catch(console.log)
             }
           });
 

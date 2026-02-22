@@ -90,6 +90,34 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
       // console.log("anchor.href searchParams", anchor.href)
     }
   }
+
+  // For subdomain mode: replace href and src on ALL elements pointing to the original domain
+  if (translationMode == 'subdomain' && domain) {
+    const currentHostname = window.location.hostname;
+    const allElements = window.document.querySelectorAll('[href], [src]');
+
+    for (let element of allElements) {
+      // Skip elements inside the language selector
+      if (element.closest('.globalseo-lang-selector-menu-container')) continue;
+      const attrs = ['href', 'src'];
+      for (let attr of attrs) {
+        const value = element.getAttribute(attr);
+        if (!value) continue;
+
+        try {
+          const url = new URL(value, window.location.origin);
+          const hostnameWithoutWww = url.hostname.replace(/^www\./, '');
+
+          if (hostnameWithoutWww === domain && url.hostname !== currentHostname) {
+            url.hostname = currentHostname;
+            element.setAttribute(attr, url.href);
+          }
+        } catch(e) {
+          // Not a valid URL, skip
+        }
+      }
+    }
+  }
 }
 
 module.exports = replaceLinks;
