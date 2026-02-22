@@ -41,7 +41,7 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
       continue;
     }
 
-    if (translationMode == 'subdomain') {
+    if (translationMode == 'subdomain' && lang) {
       // Create a new URL object
       let url = new URL(anchor.href);
 
