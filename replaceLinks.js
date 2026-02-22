@@ -26,11 +26,9 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
       continue;
     }
 
-    // assign full url if it's relative path
-    if (!anchor.href.startsWith("http") && !anchor.href.startsWith("tel:") && !anchor.href.startsWith("mailto:")) {
-      const currentUrl = new URL(sourceOrigin || window.location.href);
-      const fullHref = `${currentUrl.protocol}//${currentUrl.hostname}${anchor.href}`;
-      anchor.href = fullHref;
+    // skip relative links - leave them untouched (except for subdirectory mode which needs to prepend lang)
+    if (translationMode !== 'subdirectory' && !anchor.href.startsWith("http") && !anchor.href.startsWith("tel:") && !anchor.href.startsWith("mailto:")) {
+      continue;
     }
 
     // check for en.domain.com OR www.domain.com OR domain.com
@@ -106,13 +104,16 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
         const value = element.getAttribute(attr);
         if (!value) continue;
 
+        // Skip relative links - only process absolute URLs with hardcoded source domain
+        if (!value.startsWith('http://') && !value.startsWith('https://') && !value.startsWith('//')) continue;
+
         try {
-          const url = new URL(value, window.location.origin);
+          const url = new URL(value);
           const hostnameWithoutWww = url.hostname.replace(/^www\./, '');
 
           if (hostnameWithoutWww === domain && url.hostname !== currentHostname) {
-            url.hostname = currentHostname;
-            element.setAttribute(attr, url.href);
+            // Convert hardcoded source domain links to relative paths
+            element.setAttribute(attr, url.pathname + url.search + url.hash);
           }
         } catch(e) {
           // Not a valid URL, skip
