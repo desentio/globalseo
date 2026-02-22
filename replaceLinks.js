@@ -5,7 +5,8 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
   const anchors = window.document.querySelectorAll('a:not(.globalseo-ignore-link)');
 
   // domain
-  const domain = window.location.hostname.split('.').slice(1).join('.');
+  const sliced = window.location.hostname.split('.').slice(1).join('.');
+  const domain = sliced.includes('.') ? sliced : window.location.hostname;
   const isInOriginalDomain = (domain == window.location.hostname) || window.location.hostname.startsWith(`www`);
 
   // Loop through all anchor tags

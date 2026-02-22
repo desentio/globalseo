@@ -35,7 +35,8 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
     const timeout = getGlobalseoOptions(window).timeout;
 
     function runReplaceLinks() {
-      const domain = window.location.hostname.split('.').slice(1).join('.');
+      const sliced = window.location.hostname.split('.').slice(1).join('.');
+      const domain = sliced.includes('.') ? sliced : window.location.hostname;
       const isInOriginalDomain = (domain == window.location.hostname) || window.location.hostname.startsWith(`www`);
 
       if (optsArgs.translationMode === 'subdomain' && !isInOriginalDomain) {
