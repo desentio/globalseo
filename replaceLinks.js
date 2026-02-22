@@ -6,6 +6,7 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
 
   // domain
   const domain = window.location.hostname.split('.').slice(1).join('.');
+  const isInOriginalDomain = (domain == window.location.hostname) || window.location.hostname.startsWith(`www`);
 
   // Loop through all anchor tags
   for (let i = 0; i < anchors.length; i++) {
@@ -92,7 +93,7 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
   }
 
   // For subdomain mode: replace href and src on ALL elements pointing to the original domain
-  if (translationMode == 'subdomain' && domain) {
+  if (translationMode == 'subdomain' && domain && !isInOriginalDomain) {
     const currentHostname = window.location.hostname;
     const allElements = window.document.querySelectorAll('[href], [src]');
 
