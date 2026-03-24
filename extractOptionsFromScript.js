@@ -173,6 +173,19 @@ function extractOptionsFromScript(window, optsArgs = {
 
   const translationMode = window.translationScriptTag.getAttribute(DATA_TRANSLATION_MODE) || "searchParams";
 
+  // Fallback: if subdomain mode but activeSubdomain is empty, detect from hostname
+  if (translationMode == "subdomain" && !window.activeSubdomain && isBrowser()) {
+    const hostname = window.location.hostname;
+    const sliced = hostname.split('.').slice(1).join('.');
+    if (sliced.includes('.')) {
+      const detectedLang = hostname.split('.')[0];
+      if (detectedLang && detectedLang !== 'www') {
+        window.preventInitialTranslation = true;
+        window.activeSubdomain = detectedLang;
+      }
+    }
+  }
+
   const langParam = window.translationScriptTag.getAttribute(DATA_LANG_PARAMETER) || "lang";
 
   // DOMAIN MODE: detect active language from current host (hostname:port)
