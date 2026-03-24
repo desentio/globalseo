@@ -180,7 +180,6 @@ function extractOptionsFromScript(window, optsArgs = {
     if (sliced.includes('.')) {
       const detectedLang = hostname.split('.')[0];
       if (detectedLang && detectedLang !== 'www') {
-        window.preventInitialTranslation = true;
         window.activeSubdomain = detectedLang;
       }
     }
