@@ -180,7 +180,11 @@ function extractOptionsFromScript(window, optsArgs = {
     if (sliced.includes('.')) {
       const detectedLang = hostname.split('.')[0];
       if (detectedLang && detectedLang !== 'www') {
-        window.activeSubdomain = detectedLang;
+        const rawAllowedLangsForSubdomain = (window.translationScriptTag.getAttribute(DATA_ALLOWED_LANGUAGES) || "")
+          .split(",").map(l => l.trim().toLowerCase()).filter(Boolean);
+        if (rawAllowedLangsForSubdomain.includes(detectedLang.toLowerCase())) {
+          window.activeSubdomain = detectedLang;
+        }
       }
     }
   }
