@@ -41,20 +41,19 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
       continue;
     }
 
-    if (translationMode == 'subdomain' && lang) {
+    if (translationMode == 'subdomain') {
+      if (!lang) continue;
       // Create a new URL object
       let url = new URL(anchor.href);
 
       // append the first subdomain with lang
       // google.com -> en.google.com
-      // let subdomains = url.hostname.split('.');
-      // subdomains.splice(0, 0, lang);
       url.hostname = `${lang}.${domain}`;
 
       if (prefix) {
         url.pathname = getUnprefixedPathname(window, prefix, url.pathname);
       }
-      
+
       // Update the href of the anchor tag
       anchor.href = url.href;
     } else if (translationMode == 'subdirectory') {
@@ -87,7 +86,6 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
 
       // Update the href of the anchor tag
       anchor.href = url.href;
-      // console.log("anchor.href searchParams", anchor.href)
     }
   }
 
