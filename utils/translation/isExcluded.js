@@ -7,6 +7,21 @@ function isExcludedClassName(window,className) {
 }
 exports.isExcludedClassName = isExcludedClassName;
 
+function isInsideExcludedElement(window, node) {
+  let current = node.nodeType === 3 ? node.parentNode : node; // 3 = TEXT_NODE
+  while (current) {
+    if (current.className && typeof current.className === "string" && isExcludedClassName(window, current.className)) {
+      return true;
+    }
+    if (current.id && typeof current.id === "string" && isExcludedId(window, current.id)) {
+      return true;
+    }
+    current = current.parentNode;
+  }
+  return false;
+}
+exports.isInsideExcludedElement = isInsideExcludedElement;
+
 function isExcludedId(window, id) {
   if (!id) return false;
   

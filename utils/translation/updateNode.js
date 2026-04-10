@@ -1,5 +1,6 @@
 const { MERGE_PREFIX, isUntranslatedValue } = require("../configs");
 const getCacheKey = require("./getCacheKey");
+const { isInsideExcludedElement } = require("./isExcluded");
 
 function decodeHTMLEntities(window, text = "") {
   let textArea = window.document.createElement('textarea');
@@ -11,6 +12,9 @@ function decodeHTMLEntities(window, text = "") {
 
 function updateNode(window, node, language, type = "text", debugSource) {
   // console.log("update node", debugSource, node, node.textContent, language);
+
+  // Never touch nodes inside globalseo-exclude
+  if (node && node !== window.document && isInsideExcludedElement(window, node)) return;
 
   // update title
   if (node == window.document) {

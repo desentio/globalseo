@@ -2,7 +2,7 @@ const { getGlobalseoOptions, MERGE_PREFIX, setIsTranslationInitialized } = requi
 const { renderSelectorState } = require("../selector/renderSelectorState");
 const extractTextNodes = require("./extractTextNodes");
 const filterValidTextNodes = require("./filterValidTextNodes");
-const { isExcludedClassName, isExcludedId } = require("./isExcluded");
+const { isExcludedClassName, isExcludedId, isInsideExcludedElement } = require("./isExcluded");
 const isUrl = require("./isUrl");
 const translateNodes = require("./translateNodes");
 
@@ -35,14 +35,14 @@ function modifyHtmlStrings(window, rootElement, language, apiKey, shouldOptimize
 
       const imgTags = options.translateAttributes ? Array.from(window.document.getElementsByTagName('img')) : [];
       // only include img tags that has alt or title attribute
-      const cleanImgTags = imgTags.filter((img) => 
-        (img.alt || "").trim() || 
-        (img.title || "").trim()
+      const cleanImgTags = imgTags.filter((img) =>
+        ((img.alt || "").trim() || (img.title || "").trim()) &&
+        !isInsideExcludedElement(window, img)
       );
 
       const anchorTags = options.translateAttributes ? Array.from(window.document.getElementsByTagName('a')) : [];
       // only include anchor tags that has title attribute
-      const cleanAnchorTags = anchorTags.filter((anchor) => (anchor.title || "").trim());
+      const cleanAnchorTags = anchorTags.filter((anchor) => (anchor.title || "").trim() && !isInsideExcludedElement(window, anchor));
 
       seoNodes.push(
         window.document,
@@ -56,11 +56,11 @@ function modifyHtmlStrings(window, rootElement, language, apiKey, shouldOptimize
     if (options.translateFormPlaceholder) {
       const inputTags = Array.from(window.document.getElementsByTagName('input'));
       // only include input that has placeholder attribute
-      const cleanAnchorTags = inputTags.filter((node) => (node.placeholder || "").trim() && !isExcludedClassName(window,node.className) && !isExcludedId(window, node.id));
+      const cleanAnchorTags = inputTags.filter((node) => (node.placeholder || "").trim() && !isInsideExcludedElement(window, node));
 
       const textareaTags = Array.from(window.document.getElementsByTagName('textarea'));
       // only include textarea that has placeholder attribute
-      const cleanTextareaTags = textareaTags.filter((node) => (node.placeholder || "").trim() && !isExcludedClassName(window,node.className) && !isExcludedId(window, node.id));
+      const cleanTextareaTags = textareaTags.filter((node) => (node.placeholder || "").trim() && !isInsideExcludedElement(window, node));
 
       otherNodes.push(
         ...cleanAnchorTags,
@@ -71,7 +71,7 @@ function modifyHtmlStrings(window, rootElement, language, apiKey, shouldOptimize
     if (options.translateSelectOptions) {
       const optionTags = Array.from(window.document.getElementsByTagName('option'));
       // only include option that has value attribute and make sure the select tag is not excluded
-      const cleanOptionTags = optionTags.filter((node) => (node.textContent || "").trim() && !isExcludedClassName(window,node.className) && node.parentElement.tagName == "SELECT" && !isExcludedClassName(window,node.parentElement.className) && !isExcludedId(window, node.parentElement.id) && !isExcludedId(window, node.id));
+      const cleanOptionTags = optionTags.filter((node) => (node.textContent || "").trim() && !isInsideExcludedElement(window, node));
 
       otherNodes.push(
         ...cleanOptionTags,
@@ -81,8 +81,8 @@ function modifyHtmlStrings(window, rootElement, language, apiKey, shouldOptimize
     // translate input type="submit" & input type="button"
     const inputTypeButtonTags = Array.from(window.document.querySelectorAll('input[type="button"]'));
     const inputTypeSubmitTags = Array.from(window.document.querySelectorAll('input[type="submit"]'));
-    const cleanInputTypeButtonTags = inputTypeButtonTags.filter((node) => (node.value || "").trim() && !isExcludedClassName(window,node.className) && !isExcludedId(window, node.id));
-    const cleanInputTypeSubmitTags = inputTypeSubmitTags.filter((node) => (node.value || "").trim() && !isExcludedClassName(window,node.className) && !isExcludedId(window, node.id));
+    const cleanInputTypeButtonTags = inputTypeButtonTags.filter((node) => (node.value || "").trim() && !isInsideExcludedElement(window, node));
+    const cleanInputTypeSubmitTags = inputTypeSubmitTags.filter((node) => (node.value || "").trim() && !isInsideExcludedElement(window, node));
 
     otherNodes.push(
       ...cleanInputTypeButtonTags,
