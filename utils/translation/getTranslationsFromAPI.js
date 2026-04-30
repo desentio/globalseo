@@ -34,9 +34,19 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
 
   let isOk = false;
 
+  // Bound the request — without this, a stalled API response wedges the
+  // translation cycle queue (window.startTranslationCycleInProgress) forever
+  // and the MutationObserver keeps firing with no work draining, eventually
+  // hanging the tab.
+  const API_TIMEOUT_MS = 15000;
+
   return await new Promise((resolve) => {
     apiDebounce(window, () => {
       console.log("globalseo payload:", finalPayload);
+
+      const controller = (typeof window.AbortController === "function") ? new window.AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => controller.abort(), API_TIMEOUT_MS) : null;
+
       window.fetch(API_URL + "/globalseo/get-translations", {
         method: "POST",
         headers: {
@@ -45,6 +55,7 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
           "apikey": apiKey
         },
         body,
+        signal: controller ? controller.signal : undefined,
       })
         .then((response) => {
           if (response.ok) {
@@ -68,15 +79,24 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
           }
 
           window.rawTranslations.push({ ...finalPayload, results: data })
+          // Bound rawTranslations — long-lived SPA pages with many cycles
+          // would otherwise keep every payload + result forever.
+          const RAW_TRANSLATIONS_MAX = 50;
+          if (window.rawTranslations.length > RAW_TRANSLATIONS_MAX) {
+            window.rawTranslations.splice(0, window.rawTranslations.length - RAW_TRANSLATIONS_MAX);
+          }
           resolve(data);
         })
         .catch((err) => {
-          console.error(err);
-          window.globalseoError = err.message;
+          const isTimeout = err?.name === "AbortError";
+          window.globalseoError = isTimeout ? "translation request timed out" : err.message;
           renderSelectorState(window);
-          console.log("GLOBALSEO ERROR:", err.message);
+          console.log("GLOBALSEO ERROR:", window.globalseoError);
           resolve([]);
         })
+        .finally(() => {
+          if (timeoutId) clearTimeout(timeoutId);
+        });
     }, window.isWorker ? 0 : 500)();
   });
 }
