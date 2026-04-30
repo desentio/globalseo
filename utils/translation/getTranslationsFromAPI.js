@@ -47,14 +47,19 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
       const controller = (typeof window.AbortController === "function") ? new window.AbortController() : null;
       const timeoutId = controller ? setTimeout(() => controller.abort(), API_TIMEOUT_MS) : null;
 
-      // Abort the fetch when the user reloads / navigates away. Without this,
-      // the browser's implicit cleanup can lag, leaving the server still
-      // chewing on this request when the new page's request arrives — that's
-      // what makes "in-flight + reload = stuck" happen. Explicit abort makes
-      // the server see the close immediately so it can free its worker.
-      const onPageHide = () => { try { controller && controller.abort(); } catch (e) {} };
+      // Abort the fetch when the user reloads / navigates away. beforeunload
+      // fires earlier in the teardown sequence than pagehide; we listen to
+      // both so whichever fires first releases the request — pagehide is the
+      // safety net for browsers that suppress beforeunload (notably iOS
+      // Safari without prior interaction). Without this, the browser's
+      // implicit cleanup can lag, leaving the server still chewing on this
+      // request when the new page's request arrives.
+      const onUnload = () => { try { controller && controller.abort(); } catch (e) {} };
       const canBindUnload = controller && typeof window.addEventListener === "function";
-      if (canBindUnload) window.addEventListener("pagehide", onPageHide);
+      if (canBindUnload) {
+        window.addEventListener("beforeunload", onUnload);
+        window.addEventListener("pagehide", onUnload);
+      }
 
       window.fetch(API_URL + "/globalseo/get-translations", {
         method: "POST",
@@ -106,7 +111,8 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
         .finally(() => {
           if (timeoutId) clearTimeout(timeoutId);
           if (canBindUnload) {
-            try { window.removeEventListener("pagehide", onPageHide); } catch (e) {}
+            try { window.removeEventListener("beforeunload", onUnload); } catch (e) {}
+            try { window.removeEventListener("pagehide", onUnload); } catch (e) {}
           }
         });
     }, window.isWorker ? 0 : 500)();

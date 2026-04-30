@@ -142,6 +142,17 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
           // Start observing the target node with configured settings
           observer.observe(targetNode, config);
 
+          // Disconnect the observer on beforeunload so it physically can't
+          // fire during the browser's teardown phase. With heavy DOM activity
+          // (e.g., framework rerendering, translation in progress), the
+          // observer's per-batch work can lock the JS thread and delay the
+          // browser from completing reload/navigation.
+          if (typeof window.addEventListener === "function") {
+            window.addEventListener("beforeunload", () => {
+              try { observer.disconnect(); } catch (e) {}
+            });
+          }
+
           window.isDomListenerAdded = true;
         }
       })
