@@ -71,6 +71,21 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
 
           // Create an observer instance with a callback to handle mutations
           const observer = new MutationObserver(function(mutationsList) {
+            // While a translation cycle is in flight, skip the per-mutation
+            // work below. That work does two full-document querySelectorAll
+            // calls and writes to the DOM (classList.remove on details), each
+            // of which re-fires this callback — during a long cycle (e.g.,
+            // waiting on get-translations) the observer thrashes the JS thread
+            // and the tab becomes unresponsive to reload/navigation.
+            // We still queue a follow-up cycle so nodes added during the
+            // current cycle are re-scanned after it finishes; startTranslationCycle
+            // collapses overlapping calls via startTranslationCycleNext.
+            if (window.startTranslationCycleInProgress) {
+              startTranslationCycle(window, window.document.body, apiKey, debounceDuration)
+                .then(() => { runReplaceLinks(); })
+                .catch(console.log);
+              return;
+            }
             let nodes = [];
 
             // check if the selectors need to be recreated
