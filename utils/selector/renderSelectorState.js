@@ -54,18 +54,27 @@ async function renderSelectorState(window, opts = { shouldUpdateActiveLang: true
     }
 
     if (window.globalseoError) {
-      selector.classList.add(errorClass);
-      selector.classList.remove(readyClass, loadingClass); 
+      // Skip writes when the state is already what we'd render. Setting
+      // innerHTML or classList unconditionally would trigger MutationObserver
+      // each time renderSelectorState fires — and modifyHtmlStrings calls it
+      // in its finally on every cycle, so a sticky error would loop.
+      if (!selector.classList.contains(errorClass)) selector.classList.add(errorClass);
+      if (selector.classList.contains(readyClass) || selector.classList.contains(loadingClass)) {
+        selector.classList.remove(readyClass, loadingClass);
+      }
       const ul = selector.nextElementSibling;
 
+      const errorText = `ERROR: ${window.globalseoError}`;
       const existingError = ul.querySelector('.globalseo-errormsg');
       if (existingError) {
-        existingError.innerHTML = `ERROR: ${window.globalseoError}`;
+        if (existingError.innerHTML !== errorText) {
+          existingError.innerHTML = errorText;
+        }
         return;
       }
-      
+
       const errorListItem = window.document.createElement('li');
-      errorListItem.innerHTML = `<span class="globalseo-errormsg">ERROR: ${window.globalseoError}</span>`
+      errorListItem.innerHTML = `<span class="globalseo-errormsg">${errorText}</span>`
       ul.appendChild(errorListItem);
       return;
     }

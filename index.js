@@ -107,8 +107,19 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
             for(let mutation of mutationsList) {
               if (mutation.type === 'childList') {
                 function getIsLangSelector() {
+                  // Any mutation inside the language selector wrapper is
+                  // self-inflicted (renderSelectorState writes the loading/
+                  // ready/error UI there). Treating those as "new content to
+                  // translate" creates a feedback loop: render error → mutate
+                  // DOM → observer fires → queue new cycle → renderSelectorState
+                  // in finally → mutate DOM → … which freezes the tab.
+                  // The wrapper itself carries `globalseo-exclude`, so this
+                  // also mirrors what extractTextNodes already skips.
                   try {
-                    return (mutation?.target?.className || "").includes("globalseo-lang-selector-value") || (mutation?.target?.className || "").includes("weploy-lang-selector-value")
+                    const target = mutation?.target;
+                    if (target?.closest && target.closest('.globalseo-lang-selector-wrapper')) return true;
+                    const className = target?.className || "";
+                    return typeof className === "string" && (className.includes("globalseo-lang-selector-value") || className.includes("weploy-lang-selector-value"));
                   } catch(err) {
                     return false;
                   }
