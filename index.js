@@ -71,7 +71,32 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
 
           // Create an observer instance with a callback to handle mutations
           const observer = new MutationObserver(function(mutationsList) {
-            // While a translation cycle is in flight, skip the per-mutation
+            // 1) Drop mutations from inside our own language selector wrapper.
+            //    renderSelectorState writes loading/ready/error UI there on
+            //    every cycle; if we treat those as "new content" we queue
+            //    another cycle, which calls renderSelectorState again in
+            //    finally, which writes again — a tight loop that pegs CPU.
+            //    The wrapper has `globalseo-exclude` so extractTextNodes
+            //    already skips it; this mirrors that for the observer.
+            function isInsideLangSelector(mutation) {
+              try {
+                const target = mutation?.target;
+                if (target?.closest && target.closest('.globalseo-lang-selector-wrapper')) return true;
+                const className = target?.className || "";
+                return typeof className === "string" && (className.includes("globalseo-lang-selector-value") || className.includes("weploy-lang-selector-value"));
+              } catch(err) {
+                return false;
+              }
+            }
+
+            const relevantMutations = [];
+            for (let mutation of mutationsList) {
+              if (!isInsideLangSelector(mutation)) relevantMutations.push(mutation);
+            }
+            // Nothing to do — our own UI writes alone shouldn't kick a cycle.
+            if (!relevantMutations.length) return;
+
+            // 2) While a translation cycle is in flight, skip the per-mutation
             // work below. That work does two full-document querySelectorAll
             // calls and writes to the DOM (classList.remove on details), each
             // of which re-fires this callback — during a long cycle (e.g.,
@@ -80,10 +105,19 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
             // We still queue a follow-up cycle so nodes added during the
             // current cycle are re-scanned after it finishes; startTranslationCycle
             // collapses overlapping calls via startTranslationCycleNext.
+            //
+            // Do NOT chain `.then(runReplaceLinks)` here. startTranslationCycle
+            // returns undefined immediately when it's only queuing (it stores
+            // promiseFunction in startTranslationCycleNext and resolves the
+            // outer async wrapper). A `.then` fires synchronously after each
+            // observer batch — and runReplaceLinks does full-document
+            // querySelectorAll('a') + querySelectorAll('[href],[src]') in
+            // subdomain mode, so framework mutations during a slow / failed
+            // fetch pile up into thousands of full-DOM scans → frozen tab.
+            // Per-cycle link rewriting already happens inside
+            // startTranslationCycleBase for subdomain/subdirectory modes.
             if (window.startTranslationCycleInProgress) {
-              startTranslationCycle(window, window.document.body, apiKey, debounceDuration)
-                .then(() => { runReplaceLinks(); })
-                .catch(console.log);
+              startTranslationCycle(window, window.document.body, apiKey, debounceDuration).catch(console.log);
               return;
             }
             let nodes = [];
@@ -104,37 +138,12 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
               }
             })
 
-            for(let mutation of mutationsList) {
+            for(let mutation of relevantMutations) {
               if (mutation.type === 'childList') {
-                function getIsLangSelector() {
-                  // Any mutation inside the language selector wrapper is
-                  // self-inflicted (renderSelectorState writes the loading/
-                  // ready/error UI there). Treating those as "new content to
-                  // translate" creates a feedback loop: render error → mutate
-                  // DOM → observer fires → queue new cycle → renderSelectorState
-                  // in finally → mutate DOM → … which freezes the tab.
-                  // The wrapper itself carries `globalseo-exclude`, so this
-                  // also mirrors what extractTextNodes already skips.
-                  try {
-                    const target = mutation?.target;
-                    if (target?.closest && target.closest('.globalseo-lang-selector-wrapper')) return true;
-                    const className = target?.className || "";
-                    return typeof className === "string" && (className.includes("globalseo-lang-selector-value") || className.includes("weploy-lang-selector-value"));
-                  } catch(err) {
-                    return false;
-                  }
-                }
-                const isLangSelector = getIsLangSelector();
-
                 // Handling added nodes
                 for(let addedNode of mutation.addedNodes) {
-                  if (!isLangSelector) nodes.push(addedNode)
+                  nodes.push(addedNode)
                 }
-
-                // // Handling removed nodes 
-                // for(let removedNode of mutation.removedNodes) {
-                //   if (!isLangSelector) nodes.push(removedNode)
-                // }
               }
             }
 
