@@ -15,6 +15,10 @@ function getActiveLang(window) {
     return path[1];
   }
 
+  if (options.translationMode == "domain") {
+    return window.activeDomainLang || options.originalLanguage;
+  }
+
   const search = window.location.search;
   const params = new URLSearchParams(search);
   const activeLang = params.get(options.langParam || 'lang');

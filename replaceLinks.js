@@ -1,6 +1,6 @@
 const getUnprefixedPathname = require("./utils/translation-mode/getUnprefixedPathname");
 
-function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceOriginHostname, sourceOrigin}) {
+function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceOriginHostname, sourceOrigin, originalDomain, langToDomainMap}) {
   // Select all anchor tags
   const anchors = window.document.querySelectorAll('a:not(.globalseo-ignore-link)');
 
@@ -8,6 +8,11 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
   const sliced = window.location.hostname.split('.').slice(1).join('.');
   const domain = sliced.includes('.') ? sliced : window.location.hostname;
   const isInOriginalDomain = (domain == window.location.hostname) || window.location.hostname.startsWith(`www`);
+
+  // DOMAIN MODE: pull the target translated domain out of langToDomainMap
+  // so cross-lang internal links land on the right host.
+  const targetDomainForLang = (translationMode === "domain" && langToDomainMap && lang) ? langToDomainMap[lang] : null;
+  const originalDomainHost = (originalDomain || "").replace(/^https?:\/\//i, "").replace(/\/+$/, "");
 
   // Loop through all anchor tags
   for (let i = 0; i < anchors.length; i++) {
@@ -36,7 +41,18 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
 
     const isInternalForSubdirectory = translationMode == "subdirectory" && (anchor.hostname == sourceOriginHostname || anchor.hostname == `www.${sourceOriginHostname}`);
 
-    if (!isInternal && !isInternalForSubdirectory) {
+    // domain mode: links to original domain (or any translated domain) are internal
+    const isInternalForDomain = translationMode == "domain" && originalDomainHost && (
+      anchor.hostname === originalDomainHost ||
+      anchor.hostname === `www.${originalDomainHost}` ||
+      anchor.hostname === window.location.hostname ||
+      (langToDomainMap && Object.values(langToDomainMap).some(d => {
+        const host = (d || "").split(":")[0];
+        return host && (anchor.hostname === host || anchor.hostname === `www.${host}`);
+      }))
+    );
+
+    if (!isInternal && !isInternalForSubdirectory && !isInternalForDomain) {
       // Check if the link is external
       continue;
     }
@@ -75,6 +91,18 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
 
       // Update the href of the anchor tag
       anchor.href = url.href;
+    } else if (translationMode == 'domain') {
+      // swap host so internal navigation stays on the right per-lang domain
+      if (!targetDomainForLang) continue;
+      try {
+        const url = new URL(anchor.href);
+        const [host, port] = targetDomainForLang.split(":");
+        url.hostname = host;
+        url.port = port || "";
+        anchor.href = url.href;
+      } catch (err) {
+        // do nothing
+      }
     } else if (anchor.pathname != window.location.pathname) {
       // Check if the link is internal and does not contain a hash
 
@@ -118,6 +146,32 @@ function replaceLinks(window, {langParam, lang, translationMode, prefix, sourceO
           }
         } catch(e) {
           // Not a valid URL, skip
+        }
+      }
+    }
+  }
+
+  // For domain mode on a translated host: rewrite absolute originalDomain
+  // refs to relative paths so the browser keeps requests on the translated host.
+  if (translationMode == 'domain' && originalDomainHost) {
+    const currentHostname = window.location.hostname;
+    if (currentHostname !== originalDomainHost && currentHostname !== `www.${originalDomainHost}`) {
+      const allElements = window.document.querySelectorAll('[href], [src]');
+      for (let element of allElements) {
+        if (element.closest('.globalseo-lang-selector-wrapper')) continue;
+        const rel = element.getAttribute('rel');
+        if (rel === 'alternate' || rel === 'canonical') continue;
+        for (let attr of ['href', 'src']) {
+          const value = element.getAttribute(attr);
+          if (!value) continue;
+          if (!value.startsWith('http://') && !value.startsWith('https://') && !value.startsWith('//')) continue;
+          try {
+            const url = new URL(value, window.location.origin);
+            const hostnameWithoutWww = url.hostname.replace(/^www\./, '');
+            if (hostnameWithoutWww === originalDomainHost && url.hostname !== currentHostname) {
+              element.setAttribute(attr, url.pathname + url.search + url.hash);
+            }
+          } catch(e) { /* not a URL, skip */ }
         }
       }
     }

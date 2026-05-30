@@ -120,10 +120,19 @@ function extractOptionsFromScript(window, optsArgs = {
     window.activeSubdirectory = activeSubdirectory;
   }
 
-  // DOMAIN MODE: parse original hostname and translated domains
-  const originalDomain = window.translationScriptTag.getAttribute(DATA_ORIGINAL_DOMAIN);
+  // DOMAIN MODE: parse original hostname and translated domains.
+  // translated domains are positional — they pair with `data-allowed-languages`
+  // (minus the original lang) by index. The dashboard emits them in that order.
+  function normalizeDomainEntry(raw) {
+    if (!raw) return "";
+    let v = String(raw).trim();
+    v = v.replace(/^https?:\/\//i, "");
+    v = v.replace(/\/+$/, "");
+    return v;
+  }
+  const originalDomain = normalizeDomainEntry(window.translationScriptTag.getAttribute(DATA_ORIGINAL_DOMAIN));
   const translatedDomainsAttr = window.translationScriptTag.getAttribute(DATA_TRANSLATED_DOMAINS);
-  const translatedDomains = translatedDomainsAttr ? translatedDomainsAttr.split(",").map(d => d.trim()).filter(Boolean) : [];
+  const translatedDomains = translatedDomainsAttr ? translatedDomainsAttr.split(",").map(normalizeDomainEntry).filter(Boolean) : [];
 
   const activeServerSideLang = activeSubdomain || activeSubdirectory;
 
@@ -191,15 +200,22 @@ function extractOptionsFromScript(window, optsArgs = {
 
   const langParam = window.translationScriptTag.getAttribute(DATA_LANG_PARAMETER) || "lang";
 
-  // DOMAIN MODE: detect active language from current host (hostname:port)
+  // DOMAIN MODE: detect active language from current host
+  // we try both host (with port) and hostname (without port) so a customer
+  // hitting abc.de:443 / abc.de works whether they pasted the port or not.
   if (translationMode === "domain" && isBrowser() && originalDomain && translatedDomains.length) {
-    const currentHost = window.location.host; // includes port if non-default
-    if (currentHost !== originalDomain) {
+    const currentHost = window.location.host;
+    const currentHostname = window.location.hostname;
+    const isOriginal = currentHost === originalDomain || currentHostname === originalDomain;
+
+    if (!isOriginal) {
       const rawAllowedLangs = (window.translationScriptTag.getAttribute(DATA_ALLOWED_LANGUAGES) || "")
         .split(",").map(l => l.trim().toLowerCase()).filter(Boolean);
       const rawOriginalLang = (window.translationScriptTag.getAttribute(DATA_ORIGINAL_LANG) || window.translationScriptTag.getAttribute("data-original-lanugage") || "").trim().toLowerCase();
       const filteredLangs = rawAllowedLangs.filter(l => l !== rawOriginalLang);
-      const domainIndex = translatedDomains.indexOf(currentHost);
+
+      let domainIndex = translatedDomains.indexOf(currentHost);
+      if (domainIndex === -1) domainIndex = translatedDomains.indexOf(currentHostname);
       if (domainIndex !== -1 && filteredLangs[domainIndex]) {
         window.activeDomainLang = filteredLangs[domainIndex];
       }
@@ -220,7 +236,8 @@ function extractOptionsFromScript(window, optsArgs = {
   const allowedLangAttr = window.translationScriptTag.getAttribute(DATA_ALLOWED_LANGUAGES);
   const allowedLangs = (allowedLangAttr || "").trim().toLowerCase().split(",").filter(lang => lang && lang.trim() != originalLang).map(lang => lang.trim());
 
-  // DOMAIN MODE: build language-to-domain mapping
+  // DOMAIN MODE: build language-to-domain mapping by pairing allowedLangs
+  // (which already excludes the original) with translatedDomains by index.
   const langToDomainMap = {};
   if (translationMode === "domain" && originalDomain) {
     langToDomainMap[originalLang] = originalDomain;

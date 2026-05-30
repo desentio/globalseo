@@ -48,6 +48,25 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
           sourceOrigin: optsArgs.sourceOrigin
         });
       }
+
+      if (optsArgs.translationMode === 'domain') {
+        // only rewrite when we're actually on a translated host
+        const originalDomainHost = (optsArgs.originalDomain || "").replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+        const onOriginal = !originalDomainHost
+          || window.location.host === originalDomainHost
+          || window.location.hostname === originalDomainHost;
+        if (!onOriginal) {
+          replaceLinks(window, {
+            langParam: optsArgs.langParam,
+            lang: window.activeDomainLang || optsArgs.paramsLang,
+            translationMode: optsArgs.translationMode,
+            prefix: optsArgs.domainSourcePrefix,
+            sourceOrigin: optsArgs.sourceOrigin,
+            originalDomain: optsArgs.originalDomain,
+            langToDomainMap: optsArgs.langToDomainMap
+          });
+        }
+      }
     }
 
     return await startTranslationCycle(window, window.document.body, apiKey, timeout, true)
