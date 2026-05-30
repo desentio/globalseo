@@ -58,13 +58,6 @@ jobs:
     - name: Publish to NPM (globalseo)
       run: npm publish
 
-    - name: Rename package name to weploy-translate
-      run: |
-        sed -i 's/"name": "globalseo"/"name": "weploy-translate"/' package.json
-
-    - name: Re-publish to NPM (weploy-translate)
-      run: npm publish
-
     - name: Push bumped version
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

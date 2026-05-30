@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/desentio/weploy-translate.git"
+    "url": "git+https://github.com/desentio/globalseo.git"
   },
   "keywords": [
     "translation",
@@ -26,9 +26,9 @@
   "author": "globalseo.ai",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/desentio/weploy-translate/issues"
+    "url": "https://github.com/desentio/globalseo/issues"
   },
-  "homepage": "https://github.com/desentio/weploy-translate#readme",
+  "homepage": "https://github.com/desentio/globalseo#readme",
   "devDependencies": {
     "@babel/core": "^7.22.11",
     "@babel/preset-env": "^7.22.10",
