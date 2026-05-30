@@ -11,6 +11,14 @@ jobs:
   build_and_publish:
     runs-on: ubuntu-latest
 
+    # OIDC trusted publishing: GitHub mints a short-lived id-token, npm
+    # exchanges it for a one-shot publish credential. Replaces NPM_TOKEN.
+    # Requires a "Trusted Publisher" entry on each npm package pointing
+    # at this repo + workflow filename.
+    permissions:
+      id-token: write
+      contents: write  # needed by `git push origin main` at the end
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
@@ -18,7 +26,14 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v2
       with:
-        node-version: '16'  # Change as per your needs
+        # Node 24+ ships with npm 11 which supports OIDC. Node 16's npm 8 does NOT.
+        node-version: '24'
+        registry-url: 'https://registry.npmjs.org'
+
+    # Defensive: ensure the npm CLI is recent enough for trusted publishing,
+    # even if the bundled npm regresses.
+    - name: Ensure npm >= 11.5.1
+      run: npm install -g npm@latest
 
     - name: Install dependencies
       run: npm ci
@@ -38,19 +53,15 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npm version patch
 
-    - name: Publish to NPM
+    - name: Publish to NPM (globalseo)
       run: npm publish
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     - name: Rename package name to weploy-translate
       run: |
         sed -i 's/"name": "globalseo"/"name": "weploy-translate"/' package.json
 
-    - name: Re-publish to NPM
+    - name: Re-publish to NPM (weploy-translate)
       run: npm publish
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     - name: Push bumped version
       env:
