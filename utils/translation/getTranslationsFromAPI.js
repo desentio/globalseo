@@ -3,6 +3,15 @@ const { API_URL, setGlobalseoActiveLang, isBrowser } = require("../configs");
 const { renderSelectorState } = require("../selector/renderSelectorState");
 const { apiDebounce } = require("./apiDebounce");
 
+// The server (queue mode) returns this per-string marker while the background
+// worker is still translating a batch. We never render it — we retry until the
+// real translation lands or we give up, then fall back to the original text.
+const TRANSLATING_MARKER = "globalseo_translating";
+
+// Retry the poll up to 3 times while strings are still translating.
+const RETRY_DELAYS_MS = [5000, 10000, 15000]; // 5s, 10s, 15s
+const MAX_RETRIES = RETRY_DELAYS_MS.length;
+
 async function getTranslationsFromAPI(window, strings, language, apiKey) {
   if (!strings || !Array.isArray(strings) || !strings.length) {
     throw new Error("globalseoError: Missing strings");
@@ -32,17 +41,36 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
   const compressedPayload = shouldCompressPayload ? await compressToArrayBuffer(window, stringifiedPayload, "gzip") : null;
   const body = shouldCompressPayload ? compressedPayload : stringifiedPayload;
 
-  let isOk = false;
-
   // Bound the request — without this, a stalled API response wedges the
   // translation cycle queue (window.startTranslationCycleInProgress) forever
   // and the MutationObserver keeps firing with no work draining, eventually
   // hanging the tab.
   const API_TIMEOUT_MS = 15000;
 
-  return await new Promise((resolve) => {
-    apiDebounce(window, () => {
-      console.log("globalseo payload:", finalPayload);
+  // Does the response still contain any "still translating" markers?
+  function hasPendingMarker(data) {
+    return Array.isArray(data) && data.some((v) => typeof v === "string" && v.includes(TRANSLATING_MARKER));
+  }
+
+  // Replace any leftover marker with the original source string so we never
+  // render "globalseo_translating".
+  function stripMarkers(data) {
+    if (!Array.isArray(data)) return data;
+    return data.map((v, i) => {
+      if (typeof v === "string" && v.includes(TRANSLATING_MARKER)) {
+        const s = strings[i];
+        return (typeof s === "string" ? s : s && s.text) || "";
+      }
+      return v;
+    });
+  }
+
+  // One fetch attempt. Resolves to the parsed response array (or [] on
+  // error/timeout). `retryCount` is sent to the server (bookkeeping only) and
+  // caps the client-side retries at 3.
+  function doFetch(retryCount) {
+    return new Promise((resolve) => {
+      let isOk = false;
 
       const controller = (typeof window.AbortController === "function") ? new window.AbortController() : null;
       const timeoutId = controller ? setTimeout(() => controller.abort(), API_TIMEOUT_MS) : null;
@@ -66,7 +94,11 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
         headers: {
           'Content-Type': shouldCompressPayload ? 'application/octet-stream' : "application/json",
           // 'accept-encoding': 'gzip,deflate',
-          "apikey": apiKey
+          "apikey": apiKey,
+          // Opt into server-side queueing: the server enqueues untranslated
+          // strings and returns markers immediately instead of blocking on AI.
+          "usequeue": "true",
+          "retrycount": String(retryCount),
         },
         body,
         signal: controller ? controller.signal : undefined,
@@ -83,7 +115,7 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
         .then(data => shouldCompressPayload && isOk ? decompressArrayBuffer(window, data, "gzip") : data)
         .then(data => shouldCompressPayload && isOk ? JSON.parse(data) : data)
         .then((data) => {
-          if (data.error) {
+          if (data && data.error) {
             throw new Error(data?.error?.message || data?.error || "Error fetching translations");
           }
           setGlobalseoActiveLang(window, language);
@@ -115,6 +147,38 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
             try { window.removeEventListener("pagehide", onUnload); } catch (e) {}
           }
         });
+    });
+  }
+
+  return await new Promise((resolve) => {
+    apiDebounce(window, () => {
+      console.log("globalseo payload:", finalPayload);
+
+      let attempt = 0;
+      const run = () => {
+        doFetch(attempt).then((data) => {
+          // Still translating and we have retries left → wait, then poll again.
+          if (hasPendingMarker(data) && attempt < MAX_RETRIES) {
+            const delay = RETRY_DELAYS_MS[attempt];
+            attempt++;
+            console.log(`GLOBALSEO: still translating, retry ${attempt}/${MAX_RETRIES} in ${delay}ms`);
+            setTimeout(run, delay);
+            return;
+          }
+
+          // Gave up with strings still pending → surface the error state so the
+          // user can tell translation didn't complete, and show source text.
+          if (hasPendingMarker(data)) {
+            window.globalseoError = "translation is still processing, please try again later";
+            renderSelectorState(window);
+            console.log("GLOBALSEO: translation still pending after max retries");
+          }
+
+          resolve(stripMarkers(data));
+        });
+      };
+
+      run();
     }, window.isWorker ? 0 : 500)();
   });
 }
