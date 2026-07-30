@@ -3,8 +3,11 @@ const detectRobot = require("./detectRobot")
 // check if code runs on server or client
 const isBrowser = () => typeof window !== 'undefined'
 const API_URL = process.env.NO_CACHE ? "http://localhost:8081" : "https://api.globalseo.ai";
-const CDN_URL = "";
-const KV_URL = "https://cdn.globalseo.ai";
+// Public R2 bucket holding one gzipped translation map per page
+// (`<apiKey>-<pathname>-<lang>`). Read before /get-translations — see
+// getTranslationCacheFromR2.js. Replaces the old KV read on cdn.globalseo.ai, which was
+// dropped because a KV purge took minutes to propagate; deleting an R2 object is instant.
+const R2_URL = process.env.R2_URL || "https://translation.globalseo.ai";
 const USE_MERGE = false;
 const CONTEXT_LIMIT = 3;
 const MAX_WORDS_LENGTH_FOR_CONTEXT = 3;
@@ -108,8 +111,7 @@ module.exports = {
   shouldTranslateInlineText,
   isUntranslatedValue,
   API_URL,
-  CDN_URL,
-  KV_URL,
+  R2_URL,
   USE_MERGE,
   CONTEXT_LIMIT,
   MAX_WORDS_LENGTH_FOR_CONTEXT,
