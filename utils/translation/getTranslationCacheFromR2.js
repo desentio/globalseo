@@ -19,8 +19,38 @@ function buildCacheKey(window, language, apiKey) {
 }
 
 /**
+ * Every key the server refused to translate rather than translated — it writes
+ * "globalseo-untranslated" into the map when a project is over quota.
+ *
+ * Whether to drop them depends on the over-quota flag, which is fetched in PARALLEL with
+ * this map (getTranslationCacheFromCloudflare), so the decision can't live inside the
+ * fetch below — this is exported for the caller to apply once both answers are in.
+ *
+ * Not over quota: drop them. Treating a marker as a hit would render source text and never
+ * ask again; left out, the key goes to /get-translations, which retries now that whatever
+ * blocked it may be sorted.
+ */
+function dropUntranslatedValues(map) {
+  let dropped = 0;
+  const clean = {};
+  Object.keys(map).forEach((key) => {
+    const value = map[key];
+    if (typeof value === "string" && value.indexOf(DEFAULT_UNTRANSLATED_VALUE) !== -1) {
+      dropped++;
+      return;
+    }
+    clean[key] = value;
+  });
+
+  if (dropped) console.log(`GLOBALSEO: ${dropped} untranslated marker(s) ignored from cache`);
+  return clean;
+}
+
+/**
  * Read a whole page's translation map straight from R2 (translation.globalseo.ai) before
  * touching the API. A hit means the page renders with zero calls to /get-translations.
+ *
+ * Returns the map VERBATIM, untranslated markers included — see dropUntranslatedValues.
  *
  * Replaces the old KV read (cdn.globalseo.ai): same payload, but invalidation is
  * immediate — the API deletes the object on /delete-cache, where KV purges took minutes.
@@ -51,25 +81,7 @@ function getTranslationCacheFromR2(window, language, apiKey) {
         return decompressString(window, str, "gzip");
       })
       .then((res) => JSON.parse(res || "{}"))
-      .then((map) => {
-        // Drop keys the server refused rather than translated (it writes
-        // "globalseo-untranslated" when a project is over quota). Treating those as a hit
-        // would render source text and never ask again; leaving them out sends them to
-        // /get-translations, which retries now that the quota may be sorted.
-        let dropped = 0;
-        const clean = {};
-        Object.keys(map).forEach((key) => {
-          const value = map[key];
-          if (typeof value === "string" && value.indexOf(DEFAULT_UNTRANSLATED_VALUE) !== -1) {
-            dropped++;
-            return;
-          }
-          clean[key] = value;
-        });
-
-        if (dropped) console.log(`GLOBALSEO: ${dropped} untranslated marker(s) ignored from cache`);
-        resolve(clean);
-      })
+      .then((map) => resolve(map || {}))
       .catch(() => {
         // A miss is the normal state for a page nobody has translated yet.
         console.log("No translation cache found in R2");
@@ -81,3 +93,4 @@ function getTranslationCacheFromR2(window, language, apiKey) {
 module.exports = getTranslationCacheFromR2;
 module.exports.buildCacheKey = buildCacheKey;
 module.exports.toLangIso = toLangIso;
+module.exports.dropUntranslatedValues = dropUntranslatedValues;

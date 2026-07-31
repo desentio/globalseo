@@ -231,6 +231,12 @@ function translateNodes(window, textNodes = [], language = "", apiKey = "", seoN
           }
         }
   
+        // Anything the R2 map has an entry for is answered — including, while the project
+        // is over quota, the "globalseo-untranslated" markers the map keeps in that case
+        // (getTranslationCacheFromCloudflare drops them otherwise). That is what stops an
+        // over-quota site from asking /get-translations for the same unanswerable strings
+        // on every page view: updateNode ignores the marker and leaves the source text,
+        // which is exactly what the API would have returned.
         const notCachedInCDN = notInCache.filter((nodeData) => {
           const text = typeof nodeData == 'string' ? nodeData : nodeData?.text;
           return !cacheFromCloudFlare[text]

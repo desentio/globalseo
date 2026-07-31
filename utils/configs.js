@@ -8,6 +8,10 @@ const API_URL = process.env.NO_CACHE ? "http://localhost:8081" : "https://api.gl
 // getTranslationCacheFromR2.js. Replaces the old KV read on cdn.globalseo.ai, which was
 // dropped because a KV purge took minutes to propagate; deleting an R2 object is instant.
 const R2_URL = process.env.R2_URL || "https://translation.globalseo.ai";
+// Public R2 bucket holding one object per over-quota project, named after its api key.
+// 200 = over quota, 404 = not — see getOverQuotaFromR2.js. Read in parallel with the page
+// map above so it costs no extra round trip.
+const OVERQUOTA_URL = process.env.OVERQUOTA_URL || "https://overquota.globalseo.ai";
 const USE_MERGE = false;
 const CONTEXT_LIMIT = 3;
 const MAX_WORDS_LENGTH_FOR_CONTEXT = 3;
@@ -112,6 +116,7 @@ module.exports = {
   isUntranslatedValue,
   API_URL,
   R2_URL,
+  OVERQUOTA_URL,
   USE_MERGE,
   CONTEXT_LIMIT,
   MAX_WORDS_LENGTH_FOR_CONTEXT,
