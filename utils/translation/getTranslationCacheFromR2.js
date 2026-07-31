@@ -58,7 +58,7 @@ function dropUntranslatedValues(map) {
  * key uses the REAL pathname (the KV version hardcoded `-/-`, so every page was looking
  * up the homepage's map).
  */
-function getTranslationCacheFromR2(window, language, apiKey) {
+function getTranslationCacheFromR2(window, language, apiKey, options) {
   if (!language) {
     throw new Error("globalseoError: Missing language");
   }
@@ -69,8 +69,22 @@ function getTranslationCacheFromR2(window, language, apiKey) {
 
   const cacheKey = buildCacheKey(window, language, apiKey);
 
+  // options.bustCache — for the poll loop in getTranslationsFromAPI, which re-reads this
+  // map while the queue worker is still writing it. The server stores the object with
+  // `public, max-age=60` (r2PageCache.js), and every poll lands well inside that window,
+  // so a plain refetch would be answered from the browser's HTTP cache with the exact
+  // bytes the first read already returned — the poll would never observe the worker's
+  // write. A unique query string is a distinct cache key for both the browser and the
+  // Cloudflare edge, so the request reaches R2 itself.
+  //
+  // Only polls pay that cost. The normal first read above is left cacheable, which is the
+  // whole point of the 60s TTL: repeat visitors and SPA route changes keep hitting cache.
+  const url = options && options.bustCache
+    ? `${R2_URL}/${cacheKey}?t=${Date.now()}`
+    : `${R2_URL}/${cacheKey}`;
+
   return new Promise((resolve) => {
-    window.fetch(`${R2_URL}/${cacheKey}`, { method: "GET" })
+    window.fetch(url, { method: "GET" })
       .then((r) => (r.ok ? r.text() : ""))
       .then((str) => {
         if (!str) {

@@ -1,7 +1,8 @@
 const { compressToArrayBuffer, decompressArrayBuffer, isCompressionSupported } = require("../compressions");
-const { API_URL, setGlobalseoActiveLang, isBrowser } = require("../configs");
+const { API_URL, setGlobalseoActiveLang, isBrowser, DEFAULT_UNTRANSLATED_VALUE } = require("../configs");
 const { renderSelectorState } = require("../selector/renderSelectorState");
 const { apiDebounce } = require("./apiDebounce");
+const getTranslationCacheFromR2 = require("./getTranslationCacheFromR2");
 
 // The server (queue mode) returns this per-string marker while the background
 // worker is still translating a batch. We never render it — we retry until the
@@ -155,30 +156,81 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
       console.log("globalseo payload:", finalPayload);
 
       let attempt = 0;
-      const run = () => {
-        doFetch(attempt).then((data) => {
-          // Still translating and we have retries left → wait, then poll again.
-          if (hasPendingMarker(data) && attempt < MAX_RETRIES) {
-            const delay = RETRY_DELAYS_MS[attempt];
-            attempt++;
-            console.log(`GLOBALSEO: still translating, retry ${attempt}/${MAX_RETRIES} in ${delay}ms`);
-            setTimeout(run, delay);
-            return;
-          }
 
-          // Gave up with strings still pending → surface the error state so the
-          // user can tell translation didn't complete, and show source text.
-          if (hasPendingMarker(data)) {
-            window.globalseoError = "translation is still processing, please try again later";
-            renderSelectorState(window);
-            console.log("GLOBALSEO: translation still pending after max retries");
-          }
-
-          resolve(stripMarkers(data));
-        });
+      // Gave up with strings still pending → surface the error state so the
+      // user can tell translation didn't complete, and show source text.
+      const finish = (data) => {
+        if (hasPendingMarker(data)) {
+          window.globalseoError = "translation is still processing, please try again later";
+          renderSelectorState(window);
+          console.log("GLOBALSEO: translation still pending after max retries");
+        }
+        resolve(stripMarkers(data));
       };
 
-      run();
+      // Fill still-pending slots from a freshly read page map, leaving everything else
+      // untouched. Keyed the same way translateNodes reads the map — by the string's source
+      // text — so a merge-type entry resolves exactly as it does on the normal cache path.
+      //
+      // A quota marker is NOT an answer: it means the server refused the string rather than
+      // translated it, so the slot stays pending and falls back to source text at the end,
+      // same as the map read in getTranslationCacheFromCloudflare treats it.
+      const mergeFromMap = (data, map) => data.map((value, index) => {
+        if (typeof value !== "string" || value.indexOf(TRANSLATING_MARKER) === -1) return value;
+
+        const s = strings[index];
+        const text = typeof s === "string" ? s : s && s.text;
+        const fromMap = text ? map[text] : undefined;
+
+        if (typeof fromMap !== "string" || !fromMap) return value;
+        if (fromMap.indexOf(DEFAULT_UNTRANSLATED_VALUE) !== -1) return value;
+        return fromMap;
+      });
+
+      // Poll R2, not the API. Once the queue worker finishes a batch it writes the whole
+      // page map to R2, so the answer we're waiting for lands there — and reading it from
+      // the CDN costs the API nothing, where re-POSTing /get-translations made the server
+      // decompress, parse, hit Redis/Postgres and re-serialise for every poll. One API call
+      // per batch now, however long the worker takes.
+      //
+      // Cache-busted (see getTranslationCacheFromR2): the map is served with max-age=60 and
+      // every poll falls inside that window, so an ordinary refetch would replay the copy
+      // the first read already put in the browser cache and never see the worker's write.
+      const poll = (data) => {
+        const delay = RETRY_DELAYS_MS[attempt];
+        attempt++;
+        console.log(`GLOBALSEO: still translating, polling R2 ${attempt}/${MAX_RETRIES} in ${delay}ms`);
+
+        setTimeout(() => {
+          getTranslationCacheFromR2(window, language, apiKey, { bustCache: true })
+            .then((map) => {
+              const merged = mergeFromMap(data, map || {});
+              if (!hasPendingMarker(merged) || attempt >= MAX_RETRIES) {
+                finish(merged);
+                return;
+              }
+              poll(merged);
+            })
+            .catch(() => {
+              // A failed read is not an answer — keep what we had and try again if there
+              // are polls left. getTranslationCacheFromR2 already resolves {} on a miss, so
+              // this only fires on something unexpected.
+              if (attempt >= MAX_RETRIES) {
+                finish(data);
+                return;
+              }
+              poll(data);
+            });
+        }, delay);
+      };
+
+      doFetch(attempt).then((data) => {
+        if (!hasPendingMarker(data)) {
+          finish(data);
+          return;
+        }
+        poll(data);
+      });
     }, window.isWorker ? 0 : 500)();
   });
 }
