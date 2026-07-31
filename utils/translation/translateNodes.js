@@ -5,7 +5,6 @@ const getCacheKey = require("./getCacheKey");
 const getTagName = require("./getTagName");
 const getTranslationCacheFromCloudflare = require("./getTranslationCacheFromCloudflare");
 const getTranslationsFromAPI = require("./getTranslationsFromAPI");
-const getOverQuotaFromR2 = require("./getOverQuotaFromR2");
 const isStillSameLang = require("./isStillSameLang");
 const setLocalStorageExpiration = require("./setLocalStorageExpiration");
 const updateNode = require("./updateNode");
@@ -248,41 +247,13 @@ function translateNodes(window, textNodes = [], language = "", apiKey = "", seoN
         const options = getGlobalseoOptions(window);
 
         return new Promise((resolve) => {
-          const skipApi = () => resolve({response: [], notCachedInCDN, cacheFromCloudFlare});
-
-          if (!notCachedInCDN.length || !options.dynamicTranslation) {
-            skipApi();
-            return;
-          }
-
-          // Over quota: /get-translations cannot translate anything for this project, so
-          // every call can only come back as markers or source text. Keeping the map's
-          // "globalseo-untranslated" markers (above) is NOT enough on its own — that only
-          // suppresses strings the page map already has an entry for. A string with no
-          // entry at all (new copy, a page whose map was never built, a partially written
-          // map) still lands here, and would be sent once per visitor per page view for an
-          // answer that cannot change until the customer tops up. This gate is what
-          // actually takes that to zero.
-          //
-          // Costs no extra request: getOverQuotaFromR2 is promise-cached per api key per
-          // page load, and getTranslationCacheFromCloudflare already kicked off the same
-          // fetch in parallel with the page map above, so this awaits a promise that has
-          // almost always resolved by now.
-          //
-          // Fails closed to false (see getOverQuotaFromR2) — if the flag can't be read we
-          // call the API exactly as before, so a bad R2 read degrades to the old behaviour
-          // rather than leaving a paying customer on source text.
-          getOverQuotaFromR2(window, apiKey).then((isOverQuota) => {
-            if (isOverQuota) {
-              console.log(`GLOBALSEO: over quota — skipping /get-translations for ${notCachedInCDN.length} string(s)`);
-              skipApi();
-              return;
-            }
-
+          if (notCachedInCDN.length && options.dynamicTranslation) {
             getTranslationsFromAPI(window, notCachedInCDN, language, apiKey).then((response) => {
               resolve({response, notCachedInCDN, cacheFromCloudFlare});
             })
-          });
+          } else {
+            resolve({response: [], notCachedInCDN, cacheFromCloudFlare});
+          }
         })
       })
       .then(({response, notCachedInCDN, cacheFromCloudFlare}) => {
