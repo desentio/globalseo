@@ -1,5 +1,9 @@
 const { OVERQUOTA_URL } = require("../configs");
 
+// Kill switch: while disabled we always report "not over quota" (the fail-closed value —
+// see below) and never fire the R2 request. Flip to true to re-enable.
+const ENABLE_CLIENT_SIDE_OVERQUOTA_CHECK = false;
+
 /**
  * Is this project out of translation quota?
  *
@@ -18,6 +22,7 @@ const { OVERQUOTA_URL } = require("../configs");
  * being wrong the other way would leave a paying customer on source text.
  */
 function getOverQuotaFromR2(window, apiKey) {
+  if (!ENABLE_CLIENT_SIDE_OVERQUOTA_CHECK) return Promise.resolve(false);
   if (!apiKey) return Promise.resolve(false);
 
   return new Promise((resolve) => {
@@ -33,6 +38,7 @@ function getOverQuotaFromR2(window, apiKey) {
  * mutation batch) would be one R2 request for information that cannot have changed.
  */
 function getOverQuotaFromR2Cached(window, apiKey) {
+  if (!ENABLE_CLIENT_SIDE_OVERQUOTA_CHECK) return Promise.resolve(false);
   if (!apiKey) return Promise.resolve(false);
 
   if (!window.globalseoOverQuotaByApiKey) window.globalseoOverQuotaByApiKey = {};
