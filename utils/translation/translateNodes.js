@@ -220,7 +220,10 @@ function translateNodes(window, textNodes = [], language = "", apiKey = "", seoN
 
       // console.log("BEFORE getTranslationCacheFromCloudflare")
       getTranslationCacheFromCloudflare(window, language, apiKey).then((cacheFromCloudFlare) => {
-        if (process.env.NO_CACHE) {
+        // ?globalseo_recache=true: ignore whatever the R2 page-cache map returned so every
+        // node falls through to notCachedInCDN below and gets re-fetched from /get-translations
+        // (options.recache also forces dynamicTranslation true, so that fetch actually happens).
+        if (process.env.NO_CACHE || options.recache) {
           cacheFromCloudFlare = {};
         }
   

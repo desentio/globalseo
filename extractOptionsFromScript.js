@@ -228,6 +228,11 @@ function extractOptionsFromScript(window, optsArgs = {
   window.paramsLang = paramsLang;
 
   const paramsUpdateTranslation = params.get('globalseo_update_translation');
+  // Force a fresh render for this one page load: discard whatever the R2 page-cache map
+  // (translation.globalseo.ai) says and go straight to /get-translations, same as
+  // globalseo_update_translation but also skipping the R2 read itself, not just forcing
+  // the API call for keys R2 came up empty on.
+  const paramsRecache = params.get('globalseo_recache');
 
   // defined languages so dont need extra fetch
   const originalLangAttr = window.translationScriptTag.getAttribute(DATA_ORIGINAL_LANG) || window.translationScriptTag.getAttribute("data-original-lanugage");
@@ -531,7 +536,9 @@ function extractOptionsFromScript(window, optsArgs = {
 
   const translateAttributes = window.translationScriptTag.getAttribute(DATA_TRANSLATE_ATTR) == "true";
 
-  const dynamicTranslation = paramsUpdateTranslation == "true" || (window.translationScriptTag.getAttribute(DATA_DYNAMIC_TRANSLATION) != "false");
+  const recache = paramsRecache == "true";
+
+  const dynamicTranslation = paramsUpdateTranslation == "true" || recache || (window.translationScriptTag.getAttribute(DATA_DYNAMIC_TRANSLATION) != "false");
 
   const translateSplittedText = window.translationScriptTag.getAttribute(DATA_MERGE_INLINE) == "true";
 
@@ -558,6 +565,7 @@ function extractOptionsFromScript(window, optsArgs = {
     customLanguageCode,
     translateAttributes,
     dynamicTranslation,
+    recache,
     translateSplittedText: false,
     langParam,
     debounceDuration,
