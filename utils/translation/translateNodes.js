@@ -263,9 +263,18 @@ function translateNodes(window, textNodes = [], language = "", apiKey = "", seoN
         notCachedInCDN.map((nodeData, index) => {
           const text = typeof nodeData == 'string' ? nodeData : nodeData?.text;
 
-          // Cache the new translations
+          // Cache the new translations — but ONLY a real answer. The old `|| text` fallback
+          // cached the source text whenever the API gave nothing back (fetch error, 413,
+          // queue still busy after the R2 polls gave up), which permanently satisfied the
+          // cache check above: the string was never sent to /get-translations again for the
+          // page's lifetime, and via localStorage for up to 24h across reloads. Left
+          // uncached, the string renders as source text (updateNode skips missing entries)
+          // and the next translation cycle retries it.
           if (isStillSameLang(window, language) && window.translationCache?.[window.location.pathname]?.[language]) {
-            window.translationCache[window.location.pathname][language][text] = response[index] || cacheFromCloudFlare[text] || text;
+            const resolved = response[index] || cacheFromCloudFlare[text];
+            if (resolved) {
+              window.translationCache[window.location.pathname][language][text] = resolved;
+            }
           }
 
           // If the translation is not available, cache the original text

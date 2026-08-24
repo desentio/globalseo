@@ -69,15 +69,20 @@ async function flushBatch(window, language, apiKey, callers) {
     return Array.isArray(data) && data.some((v) => typeof v === "string" && v.includes(TRANSLATING_MARKER));
   }
 
-  // Replace any leftover marker with the original source string so we never
-  // render "globalseo_translating".
+  // Replace any leftover marker with "" so we never render "globalseo_translating".
+  // Empty on purpose, NOT the source text: translateNodes caches whatever truthy value
+  // lands in each slot as the string's translation. Returning the source text here made a
+  // give-up (queue still busy after 30s of polling, or the R2 page map missing/unreadable)
+  // indistinguishable from a real answer — the source text got cached as the "translation",
+  // persisted to localStorage, and from then on the string passed the cache check on every
+  // cycle, so /get-translations was NEVER called for it again (SPA lifetime + up to 24h
+  // across reloads). An empty slot is falsy: nothing is cached, nothing is rendered
+  // (updateNode ignores empty values, so the visible source text stays), and the next
+  // translation cycle retries the string.
   function stripMarkers(data) {
     if (!Array.isArray(data)) return data;
-    return data.map((v, i) => {
-      if (typeof v === "string" && v.includes(TRANSLATING_MARKER)) {
-        const s = mergedStrings[i];
-        return (typeof s === "string" ? s : s && s.text) || "";
-      }
+    return data.map((v) => {
+      if (typeof v === "string" && v.includes(TRANSLATING_MARKER)) return "";
       return v;
     });
   }
