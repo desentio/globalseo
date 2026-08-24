@@ -1,7 +1,7 @@
 const { compressToArrayBuffer, decompressArrayBuffer, isCompressionSupported } = require("../compressions");
 const { API_URL, setGlobalseoActiveLang, isBrowser, DEFAULT_UNTRANSLATED_VALUE } = require("../configs");
 const { renderSelectorState } = require("../selector/renderSelectorState");
-const { apiDebounce } = require("./apiDebounce");
+const { batchDebounce } = require("./apiDebounce");
 const getTranslationCacheFromR2 = require("./getTranslationCacheFromR2");
 
 // The server (queue mode) returns this per-string marker while the background
@@ -13,24 +13,40 @@ const TRANSLATING_MARKER = "globalseo_translating";
 const RETRY_DELAYS_MS = [5000, 10000, 15000]; // 5s, 10s, 15s
 const MAX_RETRIES = RETRY_DELAYS_MS.length;
 
-async function getTranslationsFromAPI(window, strings, language, apiKey) {
-  if (!strings || !Array.isArray(strings) || !strings.length) {
-    throw new Error("globalseoError: Missing strings");
-  }
+// Merges every caller queued for one flush into a single /get-translations request. Each
+// caller's `strings` occupies a contiguous slice of the merged array (order they were
+// pushed in, duplicates across callers included verbatim — the server already treats
+// repeated text as the same translationKey position-independently, so this changes nothing
+// about how any individual string gets translated, only how many HTTP requests it takes).
+async function flushBatch(window, language, apiKey, callers) {
+  // Every exit out of this function MUST resolve every caller — a hung caller promise
+  // wedges its translation cycle exactly the way the old cancel-and-replace debounce did.
+  // Resolving [] is the established failure fallback (doFetch resolves [] on fetch error
+  // too): downstream reads `response[index]`, gets undefined, and falls back to the R2 map
+  // value or source text. Promise resolve is idempotent, so the belt-and-suspenders paths
+  // below can't double-deliver.
+  const resolveAllEmpty = () => callers.forEach(({ resolve }) => {
+    try { resolve([]); } catch (e) { /* resolve never throws, but never risk a caller */ }
+  });
 
-  if (!language) {
-    throw new Error("globalseoError: Missing language");
-  }
+  try {
+  const mergedStrings = [];
+  const ranges = callers.map(({ strings }) => {
+    const start = mergedStrings.length;
+    mergedStrings.push(...strings);
+    return { start, length: strings.length };
+  });
 
-  if (!apiKey) {
-    throw new Error("globalseoError: Missing API Key");
-  }
-
+  // url/fullUrl come from the FIRST caller's captured location, not a fresh read of
+  // window.location here — the batch key already groups callers by pathname-at-call-time,
+  // but window.location itself could have moved on by the time this flush runs (a SPA nav
+  // during the debounce delay), and every caller in this batch queued against the page they
+  // were actually scanning, not whatever page happens to be current now.
   const finalPayload = {
-    strings: strings,
+    strings: mergedStrings,
     language: language,
-    url: window.location.pathname,
-    fullUrl: window.location.href,
+    url: callers[0].url,
+    fullUrl: callers[0].fullUrl,
     scriptPrevVersion: window.translationScriptPrevVersion
   };
 
@@ -59,7 +75,7 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
     if (!Array.isArray(data)) return data;
     return data.map((v, i) => {
       if (typeof v === "string" && v.includes(TRANSLATING_MARKER)) {
-        const s = strings[i];
+        const s = mergedStrings[i];
         return (typeof s === "string" ? s : s && s.text) || "";
       }
       return v;
@@ -137,7 +153,9 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
         .catch((err) => {
           const isTimeout = err?.name === "AbortError";
           window.globalseoError = isTimeout ? "translation request timed out" : err.message;
-          renderSelectorState(window);
+          // UI-only; a throw here would skip resolve([]) below and doFetch's promise
+          // would never settle — every caller in the batch would hang on a DOM quirk.
+          try { renderSelectorState(window); } catch (e) { /* never block delivery */ }
           console.log("GLOBALSEO ERROR:", window.globalseoError);
           resolve([]);
         })
@@ -151,87 +169,143 @@ async function getTranslationsFromAPI(window, strings, language, apiKey) {
     });
   }
 
+  console.log("globalseo payload:", finalPayload);
+
+  let attempt = 0;
+
+  // Gave up with strings still pending → surface the error state so the
+  // user can tell translation didn't complete, and show source text. Then hand each
+  // caller its own slice of the merged response, stripped the same way a single-caller
+  // response always was.
+  const finish = (data) => {
+    if (hasPendingMarker(data)) {
+      window.globalseoError = "translation is still processing, please try again later";
+      // UI-only; guarded so finish can never throw — the poll path calls finish from
+      // inside a .catch handler, where a second throw would be unhandled and hang
+      // every caller in the batch.
+      try { renderSelectorState(window); } catch (e) { /* never block delivery */ }
+      console.log("GLOBALSEO: translation still pending after max retries");
+    }
+    const stripped = stripMarkers(data);
+    // A non-array response (unexpected server shape) resolves every caller with [] —
+    // the old code passed it through and downstream `response[index]` read undefined,
+    // which is exactly what slicing [] yields; calling .slice() on it would throw and
+    // hang every caller instead.
+    const asArray = Array.isArray(stripped) ? stripped : [];
+    callers.forEach(({ resolve }, i) => {
+      const { start, length } = ranges[i];
+      resolve(asArray.slice(start, start + length));
+    });
+  };
+
+  // Fill still-pending slots from a freshly read page map, leaving everything else
+  // untouched. Keyed the same way translateNodes reads the map — by the string's source
+  // text — so a merge-type entry resolves exactly as it does on the normal cache path.
+  //
+  // A quota marker is NOT an answer: it means the server refused the string rather than
+  // translated it, so the slot stays pending and falls back to source text at the end,
+  // same as the map read in getTranslationCacheFromCloudflare treats it.
+  const mergeFromMap = (data, map) => data.map((value, index) => {
+    if (typeof value !== "string" || value.indexOf(TRANSLATING_MARKER) === -1) return value;
+
+    const s = mergedStrings[index];
+    const text = typeof s === "string" ? s : s && s.text;
+    const fromMap = text ? map[text] : undefined;
+
+    if (typeof fromMap !== "string" || !fromMap) return value;
+    if (fromMap.indexOf(DEFAULT_UNTRANSLATED_VALUE) !== -1) return value;
+    return fromMap;
+  });
+
+  // Poll R2, not the API. Once the queue worker finishes a batch it writes the whole
+  // page map to R2, so the answer we're waiting for lands there — and reading it from
+  // the CDN costs the API nothing, where re-POSTing /get-translations made the server
+  // decompress, parse, hit Redis/Postgres and re-serialise for every poll. One API call
+  // per batch now, however long the worker takes.
+  //
+  // Cache-busted (see getTranslationCacheFromR2): the map is served with max-age=60 and
+  // every poll falls inside that window, so an ordinary refetch would replay the copy
+  // the first read already put in the browser cache and never see the worker's write.
+  const poll = (data) => {
+    const delay = RETRY_DELAYS_MS[attempt];
+    attempt++;
+    console.log(`GLOBALSEO: still translating, polling R2 ${attempt}/${MAX_RETRIES} in ${delay}ms`);
+
+    setTimeout(() => {
+      getTranslationCacheFromR2(window, language, apiKey, { bustCache: true })
+        .then((map) => {
+          const merged = mergeFromMap(data, map || {});
+          if (!hasPendingMarker(merged) || attempt >= MAX_RETRIES) {
+            finish(merged);
+            return;
+          }
+          poll(merged);
+        })
+        .catch(() => {
+          // A failed read is not an answer — keep what we had and try again if there
+          // are polls left. getTranslationCacheFromR2 already resolves {} on a miss, so
+          // this only fires on something unexpected.
+          if (attempt >= MAX_RETRIES) {
+            finish(data);
+            return;
+          }
+          poll(data);
+        });
+    }, delay);
+  };
+
+  doFetch(attempt).then((data) => {
+    if (!hasPendingMarker(data)) {
+      finish(data);
+      return;
+    }
+    poll(data);
+  }).catch((err) => {
+    // Catches a throw out of finish/poll, and the one way doFetch CAN reject: window.fetch
+    // throwing synchronously inside its executor (fetch's own async failures resolve []).
+    // Either way, deliver the fallback rather than leave any caller hanging.
+    console.log("GLOBALSEO ERROR:", err?.message || err);
+    resolveAllEmpty();
+  });
+  } catch (err) {
+    // Anything that threw before the fetch was even dispatched (compression, payload
+    // building). The old code ran compression before its debounce, so a failure there
+    // rejected the caller's own promise; here there are N callers and no listener on
+    // flushBatch's rejection — resolve them all with the fallback instead.
+    console.log("GLOBALSEO ERROR:", err?.message || err);
+    resolveAllEmpty();
+  }
+}
+
+async function getTranslationsFromAPI(window, strings, language, apiKey) {
+  if (!strings || !Array.isArray(strings) || !strings.length) {
+    throw new Error("globalseoError: Missing strings");
+  }
+
+  if (!language) {
+    throw new Error("globalseoError: Missing language");
+  }
+
+  if (!apiKey) {
+    throw new Error("globalseoError: Missing API Key");
+  }
+
+  // Concurrent calls for the same project+language+page merge into one request instead of
+  // racing each other on a shared debounce timer (see apiDebounce.js) — keyed narrowly so a
+  // fast SPA route change or a second language on the page never gets merged into the wrong
+  // page's request.
+  const url = window.location.pathname;
+  const fullUrl = window.location.href;
+  const batchKey = `${apiKey}::${language}::${url}`;
+
   return await new Promise((resolve) => {
-    apiDebounce(window, () => {
-      console.log("globalseo payload:", finalPayload);
-
-      let attempt = 0;
-
-      // Gave up with strings still pending → surface the error state so the
-      // user can tell translation didn't complete, and show source text.
-      const finish = (data) => {
-        if (hasPendingMarker(data)) {
-          window.globalseoError = "translation is still processing, please try again later";
-          renderSelectorState(window);
-          console.log("GLOBALSEO: translation still pending after max retries");
-        }
-        resolve(stripMarkers(data));
-      };
-
-      // Fill still-pending slots from a freshly read page map, leaving everything else
-      // untouched. Keyed the same way translateNodes reads the map — by the string's source
-      // text — so a merge-type entry resolves exactly as it does on the normal cache path.
-      //
-      // A quota marker is NOT an answer: it means the server refused the string rather than
-      // translated it, so the slot stays pending and falls back to source text at the end,
-      // same as the map read in getTranslationCacheFromCloudflare treats it.
-      const mergeFromMap = (data, map) => data.map((value, index) => {
-        if (typeof value !== "string" || value.indexOf(TRANSLATING_MARKER) === -1) return value;
-
-        const s = strings[index];
-        const text = typeof s === "string" ? s : s && s.text;
-        const fromMap = text ? map[text] : undefined;
-
-        if (typeof fromMap !== "string" || !fromMap) return value;
-        if (fromMap.indexOf(DEFAULT_UNTRANSLATED_VALUE) !== -1) return value;
-        return fromMap;
-      });
-
-      // Poll R2, not the API. Once the queue worker finishes a batch it writes the whole
-      // page map to R2, so the answer we're waiting for lands there — and reading it from
-      // the CDN costs the API nothing, where re-POSTing /get-translations made the server
-      // decompress, parse, hit Redis/Postgres and re-serialise for every poll. One API call
-      // per batch now, however long the worker takes.
-      //
-      // Cache-busted (see getTranslationCacheFromR2): the map is served with max-age=60 and
-      // every poll falls inside that window, so an ordinary refetch would replay the copy
-      // the first read already put in the browser cache and never see the worker's write.
-      const poll = (data) => {
-        const delay = RETRY_DELAYS_MS[attempt];
-        attempt++;
-        console.log(`GLOBALSEO: still translating, polling R2 ${attempt}/${MAX_RETRIES} in ${delay}ms`);
-
-        setTimeout(() => {
-          getTranslationCacheFromR2(window, language, apiKey, { bustCache: true })
-            .then((map) => {
-              const merged = mergeFromMap(data, map || {});
-              if (!hasPendingMarker(merged) || attempt >= MAX_RETRIES) {
-                finish(merged);
-                return;
-              }
-              poll(merged);
-            })
-            .catch(() => {
-              // A failed read is not an answer — keep what we had and try again if there
-              // are polls left. getTranslationCacheFromR2 already resolves {} on a miss, so
-              // this only fires on something unexpected.
-              if (attempt >= MAX_RETRIES) {
-                finish(data);
-                return;
-              }
-              poll(data);
-            });
-        }, delay);
-      };
-
-      doFetch(attempt).then((data) => {
-        if (!hasPendingMarker(data)) {
-          finish(data);
-          return;
-        }
-        poll(data);
-      });
-    }, window.isWorker ? 0 : 500)();
+    batchDebounce(
+      window,
+      batchKey,
+      { strings, url, fullUrl, resolve },
+      (callers) => flushBatch(window, language, apiKey, callers),
+      window.isWorker ? 0 : 500
+    );
   });
 }
 
