@@ -100,12 +100,62 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
             function isInsideLangSelector(mutation) {
               try {
                 const target = mutation?.target;
-                if (target?.closest && target.closest('.globalseo-lang-selector-wrapper')) return true;
-                const className = target?.className || "";
+                // A characterData mutation's target is the Text node itself, which has no
+                // .closest() of its own (Element-only). Without resolving to the parent
+                // element here, any selector-UI text rewritten in place (e.g. a "Loading..."
+                // label's data changed directly) would slip past this guard now that
+                // characterData mutations are observed too, reopening the CPU-pegging loop
+                // this function exists to prevent.
+                const element = target && target.nodeType === 3 /* TEXT_NODE */ ? target.parentElement : target;
+                if (element?.closest && element.closest('.globalseo-lang-selector-wrapper')) return true;
+                const className = element?.className || "";
                 return typeof className === "string" && (className.includes("globalseo-lang-selector-value") || className.includes("weploy-lang-selector-value"));
               } catch(err) {
                 return false;
               }
+            }
+
+            // 1b) Debounce protection for characterData mutations specifically. childList
+            //     additions are normally one-shot (a node is inserted once), but a text node
+            //     whose .data keeps changing in place — a countdown timer, a live ticker, a
+            //     stock price — would otherwise re-trigger a translation cycle on every tick
+            //     forever, each one asking the API to translate content that's already stale
+            //     by the time an answer comes back. The debounceDuration passed into
+            //     startTranslationCycle only coalesces calls that land inside one delay
+            //     window (and defaults to 0, i.e. no real protection) — it doesn't stop a
+            //     node that keeps mutating forever from re-arming that window indefinitely.
+            //     Track per-node mutation frequency instead: once a node crosses the
+            //     threshold within the rolling window, treat it as "live" and stop reacting
+            //     to its characterData changes for a cooldown period. WeakMap so entries for
+            //     removed/GC'd nodes clean themselves up.
+            const CHARACTER_DATA_NOISE_WINDOW_MS = 3000;
+            const CHARACTER_DATA_NOISE_THRESHOLD = 3;
+            const CHARACTER_DATA_NOISE_COOLDOWN_MS = 30000;
+            if (!window.globalseoCharacterDataActivity) window.globalseoCharacterDataActivity = new WeakMap();
+            function isCharacterDataNodeNoisy(node) {
+              if (!node) return true;
+              const now = Date.now();
+              const activity = window.globalseoCharacterDataActivity;
+              const entry = activity.get(node);
+              if (!entry) {
+                activity.set(node, { count: 1, windowStart: now, mutedUntil: 0 });
+                return false;
+              }
+              if (entry.mutedUntil && now < entry.mutedUntil) return true;
+              if (now - entry.windowStart > CHARACTER_DATA_NOISE_WINDOW_MS) {
+                // window elapsed without crossing the threshold — reset and start counting fresh
+                entry.count = 1;
+                entry.windowStart = now;
+                entry.mutedUntil = 0;
+                return false;
+              }
+              entry.count++;
+              if (entry.count > CHARACTER_DATA_NOISE_THRESHOLD) {
+                entry.mutedUntil = now + CHARACTER_DATA_NOISE_COOLDOWN_MS;
+                // console.log("GLOBALSEO: text node updates too frequently, pausing translation cycles for it", node.data);
+                return true;
+              }
+              return false;
             }
 
             const relevantMutations = [];
@@ -163,6 +213,16 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
                 for(let addedNode of mutation.addedNodes) {
                   nodes.push(addedNode)
                 }
+              } else if (mutation.type === 'characterData') {
+                // Text updated in place (element.textContent = "..." / textNode.data = "..."
+                // on a node that already existed) never fires a childList mutation, so
+                // without this branch that new text is invisible to the whole pipeline —
+                // no cycle ever runs for it, regardless of cache or quota state. Gated by
+                // the noise guard above so a constantly-ticking node doesn't queue a cycle
+                // on every tick.
+                if (!isCharacterDataNodeNoisy(mutation.target)) {
+                  nodes.push(mutation.target)
+                }
               }
             }
 
@@ -175,8 +235,10 @@ async function getTranslations(window, apiKey, optsArgs = {}) {
             }
           });
 
-          // Set up observer configuration: what to observe
-          const config = { childList: true, subtree: true };
+          // Set up observer configuration: what to observe. characterData catches text
+          // updated in place on an existing node (see the branch above) — childList alone
+          // only sees nodes being added/removed.
+          const config = { childList: true, subtree: true, characterData: true };
 
           // Start observing the target node with configured settings
           observer.observe(targetNode, config);
