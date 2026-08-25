@@ -223,6 +223,13 @@ function translateNodes(window, textNodes = [], language = "", apiKey = "", seoN
         // ?globalseo_recache=true: ignore whatever the R2 page-cache map returned so every
         // node falls through to notCachedInCDN below and gets re-fetched from /get-translations
         // (options.recache also forces dynamicTranslation true, so that fetch actually happens).
+        //
+        // `options` here is the function-level const from the top of translateNodes. Do NOT
+        // redeclare `const options` anywhere inside this callback: a later const in this block
+        // scope shadows the outer one across the WHOLE block, so this line would throw a TDZ
+        // ReferenceError ("Cannot access 'options' before initialization") — swallowed by the
+        // silent .catch below, which killed every widget-mode translation from 2.2.79 until it
+        // was found: R2 map fetched, then nothing — no API call, no cache write, no error.
         if (process.env.NO_CACHE || options.recache) {
           cacheFromCloudFlare = {};
         }
@@ -246,8 +253,8 @@ function translateNodes(window, textNodes = [], language = "", apiKey = "", seoN
         });
         // console.log("notCachedInCDN", notCachedInCDN)
 
-        // If there are translations not in cache, fetch them from the API
-        const options = getGlobalseoOptions(window);
+        // If there are translations not in cache, fetch them from the API.
+        // (Uses the function-level `options` — see the TDZ warning above.)
 
         return new Promise((resolve) => {
           if (notCachedInCDN.length && options.dynamicTranslation) {
